@@ -1,0 +1,47 @@
+services:
+  # Reverse proxy avec HTTPS automatique (Let's Encrypt)
+  caddy:
+    image: caddy:2-alpine
+    container_name: caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - syncobsidian
+
+  # API SyncObsidian
+  syncobsidian:
+    build: .
+    container_name: syncobsidian-api
+    restart: unless-stopped
+    expose:
+      - "8000"
+    volumes:
+      - syncobsidian-data:/app/data
+    environment:
+      - SECRET_KEY=${SECRET_KEY}
+      - DATABASE_URL=sqlite+aiosqlite:///./data/syncobsidian.db
+      - STORAGE_PATH=./data/storage
+      - ACCESS_TOKEN_EXPIRE_MINUTES=1440
+
+  # Mise à jour automatique de l'IP DuckDNS
+  duckdns:
+    image: lscr.io/linuxserver/duckdns:latest
+    container_name: duckdns
+    restart: unless-stopped
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=Europe/Paris
+      - SUBDOMAINS=${DUCKDNS_SUBDOMAIN}
+      - TOKEN=${DUCKDNS_TOKEN}
+
+volumes:
+  syncobsidian-data:
+  caddy-data:
+  caddy-config:

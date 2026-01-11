@@ -1,0 +1,91 @@
+# ========================
+# Environnement & Secrets
+# ========================
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+ENV/
+env/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# ========================
+# Node.js
+# ========================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+
+# ========================
+# Obsidian Plugin Build
+# ========================
+obsidian-plugin/main.js
+obsidian-plugin/main.js.map
+obsidian-plugin/*.js.map
+
+# ========================
+# Docker & Data
+# ========================
+backend/data/
+data/
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+
+# ========================
+# IDE & Editors
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.classpath
+.settings/
+
+# ========================
+# OS
+# ========================
+.DS_Store
+.DS_Store?
+._*
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# ========================
+# Logs
+# ========================
+*.log
+logs/
+
+# ========================
+# Temporaire & Tests
+# ========================
+tmp/
+temp/
+test_data/
+.tmp/

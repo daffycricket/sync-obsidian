@@ -1,0 +1,105 @@
+import { requestUrl, RequestUrlParam } from "obsidian";
+import {
+    Token,
+    SyncRequest,
+    SyncResponse,
+    PushNotesRequest,
+    PushNotesResponse,
+    PullNotesRequest,
+    PullNotesResponse,
+} from "./types";
+
+export class ApiClient {
+    private serverUrl: string;
+    private accessToken: string | null;
+
+    constructor(serverUrl: string, accessToken: string | null = null) {
+        this.serverUrl = serverUrl.replace(/\/$/, ""); // Enlever le slash final
+        this.accessToken = accessToken;
+    }
+
+    setAccessToken(token: string | null) {
+        this.accessToken = token;
+    }
+
+    setServerUrl(url: string) {
+        this.serverUrl = url.replace(/\/$/, "");
+    }
+
+    private async request<T>(
+        endpoint: string,
+        method: string = "GET",
+        body?: any
+    ): Promise<T> {
+        const params: RequestUrlParam = {
+            url: `${this.serverUrl}${endpoint}`,
+            method: method,
+            headers: {
+                "Content-Type": "application/json",
+            },
+        };
+
+        if (this.accessToken) {
+            params.headers = {
+                ...params.headers,
+                Authorization: `Bearer ${this.accessToken}`,
+            };
+        }
+
+        if (body) {
+            params.body = JSON.stringify(body);
+        }
+
+        const response = await requestUrl(params);
+
+        if (response.status >= 400) {
+            throw new Error(
+                `API Error: ${response.status} - ${response.text}`
+            );
+        }
+
+        return response.json as T;
+    }
+
+    // Auth endpoints
+    async login(username: string, password: string): Promise<Token> {
+        return this.request<Token>("/auth/login", "POST", {
+            username,
+            password,
+        });
+    }
+
+    async register(
+        username: string,
+        email: string,
+        password: string
+    ): Promise<any> {
+        return this.request("/auth/register", "POST", {
+            username,
+            email,
+            password,
+        });
+    }
+
+    async checkHealth(): Promise<boolean> {
+        try {
+            await this.request("/health");
+            return true;
+        } catch {
+            return false;
+        }
+    }
+
+    // Sync endpoints
+    async sync(request: SyncRequest): Promise<SyncResponse> {
+        return this.request<SyncResponse>("/sync", "POST", request);
+    }
+
+    async pushNotes(request: PushNotesRequest): Promise<PushNotesResponse> {
+        return this.request<PushNotesResponse>("/sync/push", "POST", request);
+    }
+
+    async pullNotes(request: PullNotesRequest): Promise<PullNotesResponse> {
+        return this.request<PullNotesResponse>("/sync/pull", "POST", request);
+    }
+}
