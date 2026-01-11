@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        extra = "ignore"  # Ignorer les variables non définies (DUCKDNS_*, DOMAIN, etc.)
 
 
 @lru_cache()

@@ -1,6 +1,7 @@
 from datetime import timedelta
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from contextlib import asynccontextmanager
@@ -36,6 +37,9 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+
+# Compression GZip pour réduire la bande passante (~80% sur du Markdown)
+app.add_middleware(GZipMiddleware, minimum_size=500)  # Compresse si > 500 octets
 
 # CORS pour permettre les requêtes depuis Obsidian
 app.add_middleware(
