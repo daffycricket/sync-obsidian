@@ -43,17 +43,13 @@ export class SyncService {
         this.onStatusChange(status);
     }
 
-    private computeHash(content: string): string {
-        // Utiliser une implémentation simple de hash pour le navigateur
-        let hash = 0;
-        for (let i = 0; i < content.length; i++) {
-            const char = content.charCodeAt(i);
-            hash = (hash << 5) - hash + char;
-            hash = hash & hash;
-        }
-        // Convertir en hex et padder pour avoir 64 caractères (comme SHA256)
-        const hexHash = Math.abs(hash).toString(16).padStart(16, "0");
-        return hexHash.repeat(4); // 64 caractères
+    private async computeHash(content: string): Promise<string> {
+        // Utiliser SHA256 via Web Crypto API (compatible avec le serveur Python)
+        const encoder = new TextEncoder();
+        const data = encoder.encode(content);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
     }
 
     async login(username: string, password: string): Promise<boolean> {
@@ -142,7 +138,7 @@ export class SyncService {
 
         for (const file of files) {
             const content = await this.app.vault.read(file);
-            const hash = this.computeHash(content);
+            const hash = await this.computeHash(content);
             currentPaths.add(file.path);
 
             notes.push({
@@ -196,7 +192,7 @@ export class SyncService {
                     notesToPush.push({
                         path: path,
                         content: content,
-                        content_hash: this.computeHash(content),
+                        content_hash: await this.computeHash(content),
                         modified_at: new Date(file.stat.mtime).toISOString(),
                         is_deleted: false,
                     });
