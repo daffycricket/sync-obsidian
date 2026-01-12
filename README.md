@@ -284,6 +284,33 @@ Quand une note est modifiée sur plusieurs appareils simultanément :
 
 ---
 
+## Synchronisation des Suppressions
+
+Quand une note est supprimée sur un appareil :
+
+1. Le plugin mémorise la liste des fichiers connus après chaque sync (`knownFiles`)
+2. Au prochain sync, il compare les fichiers actuels avec `knownFiles`
+3. Les fichiers disparus sont envoyés au serveur avec `is_deleted: true`
+4. Le serveur propage la suppression aux autres appareils
+5. Les autres appareils suppriment le fichier local lors du pull
+
+### Comportement
+
+| Scénario | Résultat |
+|----------|----------|
+| Suppression sur Device A | Propagée à Device B au prochain sync |
+| Suppression puis re-création | Le fichier revient avec le nouveau contenu |
+| Modification après suppression | Le fichier modifié "gagne" et ressuscite |
+| Premier sync d'un nouveau device | Aucune fausse suppression (knownFiles vide) |
+
+### Gestion des conflits de suppression
+
+Si Device A supprime une note pendant que Device B la modifie :
+- Si la modification est **plus récente** que la suppression → la note est recréée
+- Si la suppression est **plus récente** → la note est supprimée sur Device B
+
+---
+
 ## Structure du Projet
 
 ```

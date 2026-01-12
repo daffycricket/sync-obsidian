@@ -83,7 +83,7 @@ export class SyncService {
         new Notice("Synchronisation en cours...");
 
         try {
-            // 1. Collecter les métadonnées des notes locales
+            // 1. Collecter les métadonnées des notes locales (incluant les suppressions)
             const localNotes = await this.collectLocalNotes();
 
             // 2. Envoyer au serveur pour comparaison
@@ -93,9 +93,9 @@ export class SyncService {
                 attachments: [],
             });
 
-            // 3. Pousser les notes demandées par le serveur
+            // 3. Pousser les notes demandées par le serveur (incluant les suppressions)
             if (syncResponse.notes_to_push.length > 0) {
-                await this.pushNotes(syncResponse.notes_to_push);
+                await this.pushNotes(syncResponse.notes_to_push, localNotes);
             }
 
             // 4. Récupérer les notes du serveur
@@ -112,6 +112,11 @@ export class SyncService {
 
             // 6. Mettre à jour le timestamp de dernière sync
             this.settings.lastSync = syncResponse.server_time;
+
+            // 7. Mettre à jour la liste des fichiers connus après sync réussi
+            this.settings.knownFiles = this.app.vault
+                .getMarkdownFiles()
+                .map((f) => f.path);
 
             this.setStatus("success");
             new Notice(
@@ -133,10 +138,12 @@ export class SyncService {
     private async collectLocalNotes(): Promise<NoteMetadata[]> {
         const notes: NoteMetadata[] = [];
         const files = this.app.vault.getMarkdownFiles();
+        const currentPaths = new Set<string>();
 
         for (const file of files) {
             const content = await this.app.vault.read(file);
             const hash = this.computeHash(content);
+            currentPaths.add(file.path);
 
             notes.push({
                 path: file.path,
@@ -146,23 +153,54 @@ export class SyncService {
             });
         }
 
+        // Détecter les fichiers supprimés (présents dans knownFiles mais plus localement)
+        // Ne détecter les suppressions que si knownFiles n'est pas vide (évite faux positifs au premier sync)
+        if (this.settings.knownFiles && this.settings.knownFiles.length > 0) {
+            for (const knownPath of this.settings.knownFiles) {
+                if (!currentPaths.has(knownPath)) {
+                    // Fichier supprimé localement
+                    notes.push({
+                        path: knownPath,
+                        content_hash: "",
+                        modified_at: new Date().toISOString(),
+                        is_deleted: true,
+                    });
+                }
+            }
+        }
+
         return notes;
     }
 
-    private async pushNotes(paths: string[]): Promise<void> {
+    private async pushNotes(paths: string[], localNotes: NoteMetadata[]): Promise<void> {
         const notesToPush: NoteContent[] = [];
+        const localNotesMap = new Map(localNotes.map((n) => [n.path, n]));
 
         for (const path of paths) {
-            const file = this.app.vault.getAbstractFileByPath(path);
-            if (file instanceof TFile) {
-                const content = await this.app.vault.read(file);
+            const localNote = localNotesMap.get(path);
+            
+            if (localNote && localNote.is_deleted) {
+                // Note supprimée localement
                 notesToPush.push({
                     path: path,
-                    content: content,
-                    content_hash: this.computeHash(content),
-                    modified_at: new Date(file.stat.mtime).toISOString(),
-                    is_deleted: false,
+                    content: "",
+                    content_hash: "",
+                    modified_at: localNote.modified_at,
+                    is_deleted: true,
                 });
+            } else {
+                // Note existante
+                const file = this.app.vault.getAbstractFileByPath(path);
+                if (file instanceof TFile) {
+                    const content = await this.app.vault.read(file);
+                    notesToPush.push({
+                        path: path,
+                        content: content,
+                        content_hash: this.computeHash(content),
+                        modified_at: new Date(file.stat.mtime).toISOString(),
+                        is_deleted: false,
+                    });
+                }
             }
         }
 

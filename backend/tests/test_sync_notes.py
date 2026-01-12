@@ -405,8 +405,8 @@ class TestSyncWithTimestamps:
         assert "timestamp-test.md" in data["notes_to_push"]
     
     @pytest.mark.asyncio
-    async def test_sync_server_newer_creates_conflict(self, authenticated_client):
-        """Si le serveur a une version plus récente avec hash différent, conflit."""
+    async def test_sync_server_newer_asks_client_to_pull(self, authenticated_client):
+        """Si le serveur a une version plus récente, le client doit la récupérer."""
         client, token = authenticated_client
         
         server_time = "2026-01-11T15:00:00"
@@ -449,9 +449,57 @@ class TestSyncWithTimestamps:
         
         assert response.status_code == 200
         data = response.json()
-        # Serveur plus récent avec hash différent = conflit
+        # Serveur plus récent = client doit récupérer la version serveur
+        pulled_paths = [n["path"] for n in data["notes_to_pull"]]
+        assert "conflict-test.md" in pulled_paths
+    
+    @pytest.mark.asyncio
+    async def test_sync_same_timestamp_different_hash_creates_conflict(self, authenticated_client):
+        """Si même timestamp mais hash différent, c'est un vrai conflit."""
+        client, token = authenticated_client
+        
+        same_time = "2026-01-11T15:00:00"
+        
+        # Push une note sur le serveur
+        await client.post(
+            "/sync/push",
+            headers=auth_headers(token),
+            json={
+                "notes": [
+                    {
+                        "path": "real-conflict.md",
+                        "content": "# Version serveur",
+                        "content_hash": "serverhash",
+                        "modified_at": same_time,
+                        "is_deleted": False
+                    }
+                ]
+            }
+        )
+        
+        # Sync avec même timestamp mais hash différent (vrai conflit)
+        response = await client.post(
+            "/sync",
+            headers=auth_headers(token),
+            json={
+                "last_sync": None,
+                "notes": [
+                    {
+                        "path": "real-conflict.md",
+                        "content_hash": "clienthash",  # Hash différent
+                        "modified_at": same_time,       # Même timestamp
+                        "is_deleted": False
+                    }
+                ],
+                "attachments": []
+            }
+        )
+        
+        assert response.status_code == 200
+        data = response.json()
+        # Même timestamp mais hash différent = conflit
         assert len(data["conflicts"]) == 1
-        assert data["conflicts"][0]["path"] == "conflict-test.md"
+        assert data["conflicts"][0]["path"] == "real-conflict.md"
     
     @pytest.mark.asyncio
     async def test_sync_same_hash_no_action(self, authenticated_client):

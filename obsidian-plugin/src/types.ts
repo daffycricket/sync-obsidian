@@ -8,6 +8,7 @@ export interface SyncObsidianSettings {
     autoSyncInterval: number; // en minutes, 0 = désactivé
     lastSync: string | null; // ISO timestamp
     showStatusBar: boolean;
+    knownFiles: string[]; // Liste des fichiers connus après le dernier sync réussi
 }
 
 export const DEFAULT_SETTINGS: SyncObsidianSettings = {
@@ -18,6 +19,7 @@ export const DEFAULT_SETTINGS: SyncObsidianSettings = {
     autoSyncInterval: 5,
     lastSync: null,
     showStatusBar: true,
+    knownFiles: [],
 };
 
 // API Response types

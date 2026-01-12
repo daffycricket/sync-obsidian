@@ -1,17 +1,5 @@
 # TODO - Déploiement SyncObsidian
 
-## 1. ⬜ Mettre le code sur GitHub
-
-```bash
-# Créer un repo sur github.com, puis :
-cd ~/syncobsidian
-git remote add origin git@github.com:ton-username/syncobsidian.git
-git branch -M main
-git push -u origin main
-```
-
----
-
 ## 2. ⬜ Récupérer le code sur le Raspberry Pi
 
 ```bash
@@ -225,3 +213,16 @@ docker-compose -f docker-compose.prod.yml logs syncobsidian
 nslookup nico-vault.duckdns.org
 docker-compose -f docker-compose.prod.yml restart duckdns
 ```
+# DONE
+
+## 1. ⬜ Mettre le code sur GitHub => DONE
+
+```bash
+# Créer un repo sur github.com, puis :
+cd ~/syncobsidian
+git remote add origin git@github.com:ton-username/syncobsidian.git
+git branch -M main
+git push -u origin main
+```
+
+---

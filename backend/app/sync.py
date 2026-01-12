@@ -42,6 +42,7 @@ async def process_sync(
     """
     Traite une requête de synchronisation.
     Compare les métadonnées client/serveur et détermine les actions à effectuer.
+    Gère les suppressions : propage is_deleted aux autres devices.
     """
     server_time = datetime.utcnow()
     
@@ -63,6 +64,34 @@ async def process_sync(
         if server_note is None:
             # Note n'existe pas sur le serveur -> le serveur veut la recevoir
             notes_to_push.append(client_note.path)
+        elif client_note.is_deleted:
+            # Client signale une suppression
+            if not server_note.is_deleted:
+                if client_note.modified_at >= server_note.modified_at:
+                    # Suppression client est plus récente -> accepter
+                    notes_to_push.append(client_note.path)
+                else:
+                    # Serveur a été modifié après la suppression -> conflit
+                    conflicts.append(NoteMetadata(
+                        path=server_note.path,
+                        content_hash=server_note.content_hash,
+                        modified_at=server_note.modified_at,
+                        is_deleted=server_note.is_deleted
+                    ))
+            # Si déjà supprimé sur le serveur, rien à faire
+        elif server_note.is_deleted:
+            # Serveur a supprimé mais client a encore la note
+            if client_note.modified_at > server_note.modified_at:
+                # Client a modifié après la suppression -> recréer la note
+                notes_to_push.append(client_note.path)
+            else:
+                # Suppression serveur est plus récente -> propager au client
+                notes_to_pull.append(NoteMetadata(
+                    path=server_note.path,
+                    content_hash=server_note.content_hash,
+                    modified_at=server_note.modified_at,
+                    is_deleted=True
+                ))
         elif server_note.content_hash == client_note.content_hash:
             # Même hash -> pas de changement
             pass
@@ -70,8 +99,8 @@ async def process_sync(
             # Client plus récent -> le serveur veut recevoir la mise à jour
             notes_to_push.append(client_note.path)
         elif server_note.modified_at > client_note.modified_at:
-            # Serveur plus récent -> conflit potentiel
-            conflicts.append(NoteMetadata(
+            # Serveur plus récent -> client doit récupérer
+            notes_to_pull.append(NoteMetadata(
                 path=server_note.path,
                 content_hash=server_note.content_hash,
                 modified_at=server_note.modified_at,
@@ -89,12 +118,15 @@ async def process_sync(
     # Notes sur le serveur que le client n'a pas mentionnées
     for path, server_note in server_notes_map.items():
         if path not in client_notes_map:
-            notes_to_pull.append(NoteMetadata(
-                path=server_note.path,
-                content_hash=server_note.content_hash,
-                modified_at=server_note.modified_at,
-                is_deleted=server_note.is_deleted
-            ))
+            # Ne pas envoyer les notes supprimées si le client ne les connaît pas
+            # (évite de propager des suppressions de notes jamais vues)
+            if not server_note.is_deleted:
+                notes_to_pull.append(NoteMetadata(
+                    path=server_note.path,
+                    content_hash=server_note.content_hash,
+                    modified_at=server_note.modified_at,
+                    is_deleted=server_note.is_deleted
+                ))
     
     # Même logique pour les pièces jointes
     attachments_to_pull: List[AttachmentMetadata] = []
@@ -119,6 +151,7 @@ async def push_notes(
 ) -> Tuple[List[str], List[str]]:
     """
     Reçoit les notes du client et les sauvegarde.
+    Gère également les suppressions (is_deleted=True).
     Retourne les listes des succès et échecs.
     """
     success = []
@@ -126,27 +159,47 @@ async def push_notes(
     
     for note in notes:
         try:
-            # Sauvegarder le fichier
-            computed_hash = await storage.save_note(user.id, note.path, note.content)
-            
-            # Mettre à jour ou créer l'entrée en base
             existing = await get_note_by_path(db, user.id, note.path)
             
-            if existing:
-                existing.content_hash = computed_hash
-                existing.modified_at = note.modified_at
-                existing.synced_at = datetime.utcnow()
-                existing.is_deleted = note.is_deleted
+            if note.is_deleted:
+                # Suppression : supprimer le fichier physique et marquer en base
+                await storage.delete_note(user.id, note.path)
+                
+                if existing:
+                    existing.is_deleted = True
+                    existing.modified_at = note.modified_at
+                    existing.synced_at = datetime.utcnow()
+                    existing.content_hash = ""  # Hash vide pour note supprimée
+                else:
+                    # Créer une entrée pour tracer la suppression
+                    new_note = Note(
+                        user_id=user.id,
+                        path=note.path,
+                        content_hash="",
+                        modified_at=note.modified_at,
+                        synced_at=datetime.utcnow(),
+                        is_deleted=True
+                    )
+                    db.add(new_note)
             else:
-                new_note = Note(
-                    user_id=user.id,
-                    path=note.path,
-                    content_hash=computed_hash,
-                    modified_at=note.modified_at,
-                    synced_at=datetime.utcnow(),
-                    is_deleted=note.is_deleted
-                )
-                db.add(new_note)
+                # Création/modification normale
+                computed_hash = await storage.save_note(user.id, note.path, note.content)
+                
+                if existing:
+                    existing.content_hash = computed_hash
+                    existing.modified_at = note.modified_at
+                    existing.synced_at = datetime.utcnow()
+                    existing.is_deleted = False
+                else:
+                    new_note = Note(
+                        user_id=user.id,
+                        path=note.path,
+                        content_hash=computed_hash,
+                        modified_at=note.modified_at,
+                        synced_at=datetime.utcnow(),
+                        is_deleted=False
+                    )
+                    db.add(new_note)
             
             await db.commit()
             success.append(note.path)
@@ -165,20 +218,31 @@ async def pull_notes(
 ) -> List[NoteContent]:
     """
     Retourne le contenu des notes demandées.
+    Pour les notes supprimées, retourne is_deleted=True avec contenu vide.
     """
     notes = []
     
     for path in paths:
         note_record = await get_note_by_path(db, user.id, path)
         if note_record:
-            content = await storage.read_note(user.id, path)
-            if content is not None:
+            if note_record.is_deleted:
+                # Note supprimée : renvoyer les métadonnées avec contenu vide
                 notes.append(NoteContent(
                     path=path,
-                    content=content,
-                    content_hash=note_record.content_hash,
+                    content="",
+                    content_hash="",
                     modified_at=note_record.modified_at,
-                    is_deleted=note_record.is_deleted
+                    is_deleted=True
                 ))
+            else:
+                content = await storage.read_note(user.id, path)
+                if content is not None:
+                    notes.append(NoteContent(
+                        path=path,
+                        content=content,
+                        content_hash=note_record.content_hash,
+                        modified_at=note_record.modified_at,
+                        is_deleted=False
+                    ))
     
     return notes
