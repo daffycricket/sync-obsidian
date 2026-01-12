@@ -1,6 +1,6 @@
 {
   "name": "obsidian-syncobsidian",
-  "version": "1.0.0",
+  "version": "1..0",
   "description": "Plugin de synchronisation auto-hébergé pour Obsidian",
   "main": "main.js",
   "scripts": {

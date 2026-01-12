@@ -90,12 +90,23 @@ export class SyncService {
             });
 
             // 3. Pousser les notes demandées par le serveur (incluant les suppressions)
+            let deletedCount = 0;
             if (syncResponse.notes_to_push.length > 0) {
+                // Compter les suppressions envoyées
+                const localNotesMap = new Map(localNotes.map((n) => [n.path, n]));
+                deletedCount = syncResponse.notes_to_push.filter(
+                    (path) => localNotesMap.get(path)?.is_deleted
+                ).length;
                 await this.pushNotes(syncResponse.notes_to_push, localNotes);
             }
 
             // 4. Récupérer les notes du serveur
+            let receivedDeletedCount = 0;
             if (syncResponse.notes_to_pull.length > 0) {
+                // Compter les suppressions reçues
+                receivedDeletedCount = syncResponse.notes_to_pull.filter(
+                    (n) => n.is_deleted
+                ).length;
                 await this.pullNotes(
                     syncResponse.notes_to_pull.map((n) => n.path)
                 );
@@ -115,9 +126,14 @@ export class SyncService {
                 .map((f) => f.path);
 
             this.setStatus("success");
-            new Notice(
-                `Synchronisation terminée! ${syncResponse.notes_to_push.length} envoyées, ${syncResponse.notes_to_pull.length} reçues`
-            );
+            
+            // Construire le message de notification
+            const totalDeleted = deletedCount + receivedDeletedCount;
+            let message = `Synchronisation terminée! ${syncResponse.notes_to_push.length} envoyées, ${syncResponse.notes_to_pull.length} reçues`;
+            if (totalDeleted > 0) {
+                message += `, ${totalDeleted} supprimée${totalDeleted > 1 ? 's' : ''}`;
+            }
+            new Notice(message);
 
             // Revenir à idle après 3 secondes
             setTimeout(() => this.setStatus("idle"), 3000);
