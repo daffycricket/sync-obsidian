@@ -1,16 +1,20 @@
 services:
-  # Reverse proxy avec HTTPS automatique (Let's Encrypt)
+  # Reverse proxy avec HTTPS automatique (Let's Encrypt via DNS-01)
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: .
+      dockerfile: Dockerfile.caddy
     container_name: caddy
     restart: unless-stopped
     ports:
-      - "80:80"
-      - "443:443"
+      - "20443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
       - caddy-config:/config
+    environment:
+      - DOMAIN=${DOMAIN}
+      - DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
     depends_on:
       - syncobsidian
 

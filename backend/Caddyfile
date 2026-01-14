@@ -1,4 +1,10 @@
-{$DOMAIN:nico-vault.duckdns.org} {
+{
+    # Utiliser le challenge DNS-01 au lieu de HTTP-01
+    # Nécessaire quand les ports 80/443 ne sont pas accessibles
+    acme_dns duckdns {$DUCKDNS_TOKEN}
+}
+
+{$DOMAIN:mon-vault.duckdns.org} {
     reverse_proxy syncobsidian:8000
     
     # Headers de sécurité

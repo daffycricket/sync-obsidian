@@ -161,10 +161,13 @@ mon-vault.duckdns.org {
 
 | Port externe | Port interne | IP destination | Protocole |
 |--------------|--------------|----------------|-----------|
-| 80           | 80           | IP du Raspberry | TCP      |
-| 443          | 443          | IP du Raspberry | TCP      |
+| 20443        | 443          | IP du Raspberry | TCP      |
 
 > 💡 Pour trouver l'IP de votre Raspberry : `hostname -I`
+> 
+> ⚠️ **Note Freebox** : Les ports < 1024 (ou < 16000 selon le modèle) sont souvent bloqués. 
+> C'est pourquoi on utilise les ports 20080/20443 en externe, et le **challenge DNS-01** 
+> pour Let's Encrypt (qui ne nécessite pas l'accès aux ports 80/443).
 
 ### Étape 5 : Lancer les services
 
@@ -193,9 +196,11 @@ curl -X POST https://mon-vault.duckdns.org/auth/register \
 ### Étape 7 : Configurer Obsidian
 
 Dans les paramètres du plugin SyncObsidian :
-- **URL du serveur** : `https://mon-vault.duckdns.org`
+- **URL du serveur** : `https://mon-vault.duckdns.org:20443`
 - **Nom d'utilisateur** : `monuser`
 - **Mot de passe** : `motdepasse-fort`
+
+> 💡 N'oubliez pas le port `:20443` dans l'URL !
 
 C'est prêt ! 🎉
 

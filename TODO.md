@@ -1,78 +1,52 @@
 # TODO - Déploiement SyncObsidian
 
-## 2. ⬜ Récupérer le code sur le Raspberry Pi
+## 🔥 Prochaine action : Appliquer les modifications DNS-01
 
-```bash
-# Sur le Raspberry Pi
-ssh pi@192.168.x.x
+Le certificat HTTPS échoue car la Freebox bloque les ports < 16000.
+Solution : utiliser le **challenge DNS-01** au lieu de HTTP-01.
 
-# Installer Git et Docker si pas fait
-sudo apt update && sudo apt install -y git
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-# Se déconnecter/reconnecter
-
-# Cloner le repo
-git clone https://github.com/ton-username/syncobsidian.git
-cd syncobsidian/backend
-```
-
----
-
-## 3. ⬜ Créer le fichier .env sur le serveur
+### Sur le Raspberry Pi :
 
 ```bash
 cd ~/syncobsidian/backend
-nano .env
-```
 
-Contenu :
-```env
-# Générer avec : python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-SECRET_KEY=ta-cle-secrete-generee
+# Récupérer les modifications
+git pull
 
-# DuckDNS (depuis https://www.duckdns.org)
-DUCKDNS_SUBDOMAIN=nico-vault
-DUCKDNS_TOKEN=ton-token-duckdns
+# Reconstruire l'image Caddy avec le plugin DuckDNS
+docker-compose -f docker-compose.prod.yml down
+docker-compose -f docker-compose.prod.yml build --no-cache caddy
 
-# Domaine
-DOMAIN=nico-vault.duckdns.org
-```
-
-⚠️ **Ne jamais commiter ce fichier !**
-
----
-
-## 4. ⬜ Ouvrir les ports sur la Freebox
-
-1. Aller sur **http://mafreebox.freebox.fr**
-2. Se connecter (mot de passe admin Freebox)
-3. **Paramètres de la Freebox** → **Gestion des ports**
-4. Ajouter :
-
-| Port externe | Port interne | IP destination | Protocole |
-|--------------|--------------|----------------|-----------|
-| 80           | 80           | IP du Raspberry | TCP      |
-| 443          | 443          | IP du Raspberry | TCP      |
-
-💡 Pour trouver l'IP du Raspberry : `hostname -I` (ex: 192.168.1.42)
-
----
-
-## 5. ⬜ Lancer les services sur le Raspberry
-
-```bash
-cd ~/syncobsidian/backend
+# Relancer
 docker-compose -f docker-compose.prod.yml up -d
 
-# Vérifier que tout tourne
-docker ps
-docker-compose -f docker-compose.prod.yml logs -f
+# Vérifier que le certificat s'obtient
+docker-compose -f docker-compose.prod.yml logs -f caddy
 ```
 
-Tester l'accès :
+Vous devriez voir :
+```
+"msg":"certificate obtained successfully","identifier":"mon-vault.duckdns.org"
+```
+
+---
+
+## 4. ⬜ Mettre à jour le port forwarding Freebox
+
+Modifier la règle existante (ou supprimer 80/443 et ajouter) :
+
+| Port externe | Port interne | IP destination  | Protocole |
+|--------------|--------------|-----------------|-----------|
+| 20443        | 443          | IP du Raspberry | TCP       |
+
+> ⚠️ Le port 80 n'est plus nécessaire grâce au challenge DNS-01
+
+---
+
+## 5. ⬜ Vérifier que HTTPS fonctionne
+
 ```bash
-curl https://nico-vault.duckdns.org/health
+curl https://mon-vault.duckdns.org:20443/health
 # Doit retourner : {"status":"healthy","service":"syncobsidian"}
 ```
 
@@ -81,34 +55,18 @@ curl https://nico-vault.duckdns.org/health
 ## 6. ⬜ Créer un compte utilisateur
 
 ```bash
-curl -X POST https://nico-vault.duckdns.org/auth/register \
+curl -X POST https://mon-vault.duckdns.org:20443/auth/register \
   -H "Content-Type: application/json" \
-  -d '{"username": "nico", "email": "nico@example.com", "password": "mot-de-passe-fort"}'
+  -d '{"username": "monuser", "email": "email@example.com", "password": "mot-de-passe-fort"}'
 ```
 
 ---
 
-## 7. ⬜ Installer le plugin sur les devices
+## 7. 🔄 Installer le plugin sur les devices
 
-### Desktop (Mac/Windows/Linux)
+### ✅ Desktop (Mac/Windows/Linux) - FAIT
 
-1. Compiler le plugin :
-```bash
-cd ~/syncobsidian/obsidian-plugin
-npm install
-npm run build
-```
-
-2. Copier dans Obsidian :
-```bash
-# Trouver ton vault Obsidian, puis :
-mkdir -p "/chemin/vers/vault/.obsidian/plugins/syncobsidian"
-cp main.js manifest.json "/chemin/vers/vault/.obsidian/plugins/syncobsidian/"
-```
-
-3. Dans Obsidian : **Paramètres** → **Plugins tiers** → Activer "SyncObsidian"
-
-### Android
+### ⬜ Android
 
 1. Copier `main.js` et `manifest.json` sur le téléphone
 2. Utiliser un gestionnaire de fichiers pour les placer dans :
@@ -120,7 +78,7 @@ cp main.js manifest.json "/chemin/vers/vault/.obsidian/plugins/syncobsidian/"
 
 **Alternative** : Utiliser un cloud (Google Drive, Syncthing) pour sync le dossier `.obsidian/plugins/`
 
-### iOS
+### ⬜ iOS
 
 1. Ouvrir l'app **Fichiers**
 2. Naviguer vers : **Sur mon iPhone** → **Obsidian** → **MonVault** → **.obsidian** → **plugins**
@@ -139,9 +97,11 @@ Dans les paramètres du plugin SyncObsidian :
 
 | Champ | Valeur |
 |-------|--------|
-| URL du serveur | `https://nico-vault.duckdns.org` |
-| Nom d'utilisateur | `nico` |
+| URL du serveur | `https://mon-vault.duckdns.org:20443` |
+| Nom d'utilisateur | `monuser` |
 | Mot de passe | `ton-mot-de-passe` |
+
+> 💡 N'oubliez pas le port `:20443` dans l'URL !
 
 Cliquer sur **Se connecter**, puis **Synchroniser**.
 
@@ -181,13 +141,14 @@ Si tu veux plus de sécurité, demande-moi d'implémenter les refresh tokens.
 
 ## ✅ Checklist finale
 
-- [ ] Code sur GitHub
-- [ ] Code cloné sur Raspberry Pi
-- [ ] Fichier `.env` créé sur le serveur
-- [ ] Ports 80/443 ouverts sur Freebox
-- [ ] Services Docker lancés
+- [x] Code sur GitHub
+- [x] Code cloné sur Raspberry Pi
+- [x] Fichier `.env` créé sur le serveur
+- [ ] Port 20443 ouvert sur Freebox
+- [ ] Modifications DNS-01 appliquées sur le Raspberry
+- [ ] Services Docker relancés avec certificat HTTPS OK
 - [ ] Compte utilisateur créé
-- [ ] Plugin installé sur Mac
+- [x] Plugin installé sur Mac
 - [ ] Plugin installé sur Android
 - [ ] Plugin installé sur iOS
 - [ ] Sync testé entre tous les devices
@@ -201,7 +162,10 @@ Si tu veux plus de sécurité, demande-moi d'implémenter les refresh tokens.
 ```bash
 docker-compose -f docker-compose.prod.yml logs caddy
 ```
-Vérifier que les ports 80/443 sont bien ouverts.
+Vérifier que :
+- Le port 20443 est bien ouvert sur la Freebox
+- Le token DuckDNS est correct dans `.env`
+- L'image Caddy a été reconstruite avec le plugin DNS
 
 ### L'API ne répond pas
 ```bash
@@ -210,15 +174,17 @@ docker-compose -f docker-compose.prod.yml logs syncobsidian
 
 ### DuckDNS ne pointe pas vers la bonne IP
 ```bash
-nslookup nico-vault.duckdns.org
+nslookup mon-vault.duckdns.org
 docker-compose -f docker-compose.prod.yml restart duckdns
 ```
-# DONE
 
-## 1. ⬜ Mettre le code sur GitHub => DONE
+---
+
+# ✅ DONE
+
+## 1. ✅ Mettre le code sur GitHub
 
 ```bash
-# Créer un repo sur github.com, puis :
 cd ~/syncobsidian
 git remote add origin git@github.com:ton-username/syncobsidian.git
 git branch -M main
@@ -226,3 +192,46 @@ git push -u origin main
 ```
 
 ---
+
+## 2. ✅ Récupérer le code sur le Raspberry Pi
+
+```bash
+ssh pi@192.168.x.x
+
+# Installer Git et Docker
+sudo apt update && sudo apt install -y git
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+
+# Cloner le repo
+git clone https://github.com/ton-username/syncobsidian.git
+cd syncobsidian/backend
+```
+
+---
+
+## 3. ✅ Créer le fichier .env sur le serveur
+
+```bash
+cd ~/syncobsidian/backend
+nano .env
+```
+
+Contenu :
+```env
+SECRET_KEY=ta-cle-secrete-generee
+DUCKDNS_SUBDOMAIN=mon-vault
+DUCKDNS_TOKEN=ton-token-duckdns
+DOMAIN=mon-vault.duckdns.org
+```
+
+---
+
+## Problème identifié : Ports Freebox bloqués
+
+**Constat** : La Freebox bloque les ports < 16000, impossible d'utiliser 80/443.
+
+**Solution appliquée** : 
+- Utilisation du port 20443 au lieu de 443
+- Challenge DNS-01 pour Let's Encrypt (pas besoin du port 80)
+- Fichiers modifiés : `Caddyfile`, `docker-compose.prod.yml`, `Dockerfile.caddy`
