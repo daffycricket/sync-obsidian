@@ -2,7 +2,9 @@
     # TLS avec challenge DNS-01 via DuckDNS
     tls {
         dns duckdns {$DUCKDNS_TOKEN}
-        resolvers 8.8.8.8 1.1.1.1
+        # Désactiver la vérification de propagation DNS
+        # (les serveurs DNS de DuckDNS ne sont pas joignables)
+        propagation_timeout -1
     }
     
     reverse_proxy syncobsidian:8000
