@@ -33,7 +33,7 @@ cp .env.example .env
 
 2. **Lancer avec Docker** :
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 3. **Créer un compte** :
@@ -173,13 +173,13 @@ mon-vault.duckdns.org {
 
 ```bash
 cd ~/syncobsidian/backend
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 Vérifier que tout fonctionne :
 ```bash
 # Voir les logs
-docker-compose -f docker-compose.prod.yml logs -f
+docker compose -f docker-compose.prod.yml logs -f
 
 # Vérifier les conteneurs
 docker ps
@@ -391,7 +391,7 @@ nslookup mon-vault.duckdns.org
 
 ```bash
 # Vérifier les logs
-docker-compose -f docker-compose.prod.yml logs syncobsidian
+docker compose -f docker-compose.prod.yml logs syncobsidian
 
 # Vérifier que les conteneurs tournent
 docker ps
@@ -401,7 +401,7 @@ docker ps
 
 Le conteneur `duckdns` met à jour l'IP automatiquement toutes les 5 minutes. Pour forcer :
 ```bash
-docker-compose -f docker-compose.prod.yml restart duckdns
+docker compose -f docker-compose.prod.yml restart duckdns
 ```
 
 ---

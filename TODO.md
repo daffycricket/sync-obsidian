@@ -14,14 +14,14 @@ cd ~/syncobsidian/backend
 git pull
 
 # Reconstruire l'image Caddy avec le plugin DuckDNS
-docker-compose -f docker-compose.prod.yml down
-docker-compose -f docker-compose.prod.yml build --no-cache caddy
+docker compose -f docker-compose.prod.yml down
+docker compose -f docker-compose.prod.yml build --no-cache caddy
 
 # Relancer
-docker-compose -f docker-compose.prod.yml up -d
+docker compose -f docker-compose.prod.yml up -d
 
 # Vérifier que le certificat s'obtient
-docker-compose -f docker-compose.prod.yml logs -f caddy
+docker compose -f docker-compose.prod.yml logs -f caddy
 ```
 
 Vous devriez voir :
@@ -160,7 +160,7 @@ Si tu veux plus de sécurité, demande-moi d'implémenter les refresh tokens.
 
 ### Le certificat HTTPS ne marche pas
 ```bash
-docker-compose -f docker-compose.prod.yml logs caddy
+docker compose -f docker-compose.prod.yml logs caddy
 ```
 Vérifier que :
 - Le port 20443 est bien ouvert sur la Freebox
@@ -169,13 +169,13 @@ Vérifier que :
 
 ### L'API ne répond pas
 ```bash
-docker-compose -f docker-compose.prod.yml logs syncobsidian
+docker compose -f docker-compose.prod.yml logs syncobsidian
 ```
 
 ### DuckDNS ne pointe pas vers la bonne IP
 ```bash
 nslookup mon-vault.duckdns.org
-docker-compose -f docker-compose.prod.yml restart duckdns
+docker compose -f docker-compose.prod.yml restart duckdns
 ```
 
 ---
