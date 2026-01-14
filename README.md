@@ -64,145 +64,37 @@ npm run build
 
 ---
 
-## 🚀 Déploiement Production (Raspberry Pi + HTTPS gratuit)
+## 🚀 Déploiement Production (HTTPS)
 
-Cette section explique comment déployer SyncObsidian sur un Raspberry Pi avec :
-- ✅ **HTTPS gratuit** (Let's Encrypt)
-- ✅ **URL stable gratuite** (DuckDNS)
-- ✅ **Accessible depuis Internet** (Mac, Android, iOS...)
+Pour un déploiement accessible depuis Internet avec HTTPS :
 
-### Architecture Production
+1. **Prérequis** :
+   - Un serveur avec Docker (VM, VPS, machine locale...)
+   - Un nom de domaine pointant vers l'IP publique du serveur
+   - Ports 443 (ou un port custom) accessibles depuis Internet
 
-```
-Internet
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────┐
-│  https://votre-nom.duckdns.org                              │
-└─────────────────────────────────────────────────────────────┘
-    │
-    ▼ (ports 80/443)
-┌─────────────────────────────────────────────────────────────┐
-│  Freebox (NAT/Port Forwarding)                              │
-└─────────────────────────────────────────────────────────────┘
-    │
-    ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Raspberry Pi                                               │
-│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────┐   │
-│  │   Caddy     │─▶│ SyncObsidian │  │    DuckDNS       │   │
-│  │ (HTTPS/TLS) │  │    API       │  │ (mise à jour IP) │   │
-│  └─────────────┘  └──────────────┘  └──────────────────┘   │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Étape 1 : Créer un domaine DuckDNS (gratuit)
-
-1. Aller sur **[duckdns.org](https://www.duckdns.org)**
-2. Se connecter avec Google, GitHub ou autre
-3. Créer un sous-domaine (ex: `mon-vault`) → vous obtenez `mon-vault.duckdns.org`
-4. **Copier votre token** affiché en haut de la page
-
-### Étape 2 : Préparer le Raspberry Pi
-
+2. **Configurer l'environnement** :
 ```bash
-# Installer Docker si pas déjà fait
-curl -fsSL https://get.docker.com | sh
-sudo usermod -aG docker $USER
-# Se déconnecter/reconnecter pour appliquer
-
-# Cloner le projet
-git clone https://github.com/votre-repo/syncobsidian.git
-cd syncobsidian/backend
-```
-
-### Étape 3 : Configurer l'environnement
-
-1. **Générer une clé secrète** :
-```bash
-python3 -c "import secrets; print(secrets.token_urlsafe(32))"
-```
-
-2. **Créer le fichier `.env`** :
-```bash
+cd backend
+cp .env.example .env
 nano .env
 ```
 
-Contenu :
 ```env
-# Clé secrète JWT (IMPORTANT: utiliser la clé générée ci-dessus)
 SECRET_KEY=votre_cle_secrete_generee
-
-# Configuration DuckDNS
-DUCKDNS_SUBDOMAIN=mon-vault
-DUCKDNS_TOKEN=votre-token-duckdns-ici
-
-# Domaine (doit correspondre au subdomain DuckDNS)
-DOMAIN=mon-vault.duckdns.org
+DOMAIN=sync.example.com
 ```
 
-3. **Mettre à jour le Caddyfile** :
+3. **Lancer en production** :
 ```bash
-nano Caddyfile
-```
-
-Remplacer la première ligne par votre domaine :
-```
-mon-vault.duckdns.org {
-    ...
-}
-```
-
-### Étape 4 : Configurer la Freebox
-
-1. Accéder à **[mafreebox.freebox.fr](http://mafreebox.freebox.fr)**
-2. Aller dans **Paramètres de la Freebox** → **Gestion des ports**
-3. Ajouter deux redirections :
-
-| Port externe | Port interne | IP destination | Protocole |
-|--------------|--------------|----------------|-----------|
-| 20443        | 443          | IP du Raspberry | TCP      |
-
-> 💡 Pour trouver l'IP de votre Raspberry : `hostname -I`
-> 
-> ⚠️ **Note Freebox** : Les ports < 1024 (ou < 16000 selon le modèle) sont souvent bloqués. 
-> C'est pourquoi on utilise les ports 20080/20443 en externe, et le **challenge DNS-01** 
-> pour Let's Encrypt (qui ne nécessite pas l'accès aux ports 80/443).
-
-### Étape 5 : Lancer les services
-
-```bash
-cd ~/syncobsidian/backend
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Vérifier que tout fonctionne :
-```bash
-# Voir les logs
-docker compose -f docker-compose.prod.yml logs -f
+Le fichier `docker-compose.prod.yml` inclut Caddy qui gère automatiquement les certificats Let's Encrypt.
 
-# Vérifier les conteneurs
-docker ps
-```
-
-### Étape 6 : Créer votre compte
-
-```bash
-curl -X POST https://mon-vault.duckdns.org/auth/register \
-  -H "Content-Type: application/json" \
-  -d '{"username": "monuser", "email": "email@example.com", "password": "motdepasse-fort"}'
-```
-
-### Étape 7 : Configurer Obsidian
-
-Dans les paramètres du plugin SyncObsidian :
-- **URL du serveur** : `https://mon-vault.duckdns.org:20443`
-- **Nom d'utilisateur** : `monuser`
-- **Mot de passe** : `motdepasse-fort`
-
-> 💡 N'oubliez pas le port `:20443` dans l'URL !
-
-C'est prêt ! 🎉
+4. **Configurer Obsidian** :
+   - **URL du serveur** : `https://sync.example.com` (avec le port si différent de 443)
+   - **Identifiants** : ceux créés via `/auth/register`
 
 ---
 
@@ -236,9 +128,7 @@ C'est prêt ! 🎉
 | `DATABASE_URL` | URL de la base SQLite | `sqlite+aiosqlite:///./data/syncobsidian.db` |
 | `STORAGE_PATH` | Chemin de stockage des fichiers | `./data/storage` |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | Durée de validité du token | `1440` (24h) |
-| `DUCKDNS_SUBDOMAIN` | Sous-domaine DuckDNS | - |
-| `DUCKDNS_TOKEN` | Token d'authentification DuckDNS | - |
-| `DOMAIN` | Domaine complet | - |
+| `DOMAIN` | Domaine pour HTTPS (production) | - |
 
 ### Fichiers de configuration
 
@@ -381,11 +271,12 @@ npm run dev  # Mode watch
 
 ### Le certificat HTTPS ne se génère pas
 
-1. Vérifier que les ports 80 et 443 sont bien ouverts sur la Freebox
-2. Vérifier que le domaine DuckDNS pointe vers votre IP :
+1. Vérifier que le domaine pointe vers l'IP du serveur :
 ```bash
-nslookup mon-vault.duckdns.org
+nslookup sync.example.com
 ```
+2. Vérifier que le port 443 est accessible depuis Internet
+3. Consulter les logs Caddy : `docker compose -f docker-compose.prod.yml logs caddy`
 
 ### L'API ne répond pas
 
@@ -397,24 +288,17 @@ docker compose -f docker-compose.prod.yml logs syncobsidian
 docker ps
 ```
 
-### L'IP DuckDNS n'est pas à jour
-
-Le conteneur `duckdns` met à jour l'IP automatiquement toutes les 5 minutes. Pour forcer :
-```bash
-docker compose -f docker-compose.prod.yml restart duckdns
-```
-
 ---
 
-## 🗄️ Administration des données (sur le Pi)
+## 🗄️ Administration des données
 
 ### Base de données SQLite
 
-La base de données se trouve dans `~/syncobsidian/backend/data/syncobsidian.db`.
+La base de données se trouve dans `backend/data/syncobsidian.db`.
 
 **Accès à la CLI SQLite** :
 ```bash
-sqlite3 ~/syncobsidian/backend/data/syncobsidian.db
+sqlite3 backend/data/syncobsidian.db
 ```
 
 **Commandes utiles** :
@@ -455,7 +339,7 @@ DELETE FROM users WHERE id = 1;
 
 ### Fichiers (notes et attachments)
 
-Les fichiers sont stockés dans `~/syncobsidian/backend/data/storage/`.
+Les fichiers sont stockés dans `backend/data/storage/`.
 
 **Structure** :
 ```
@@ -476,16 +360,16 @@ data/storage/
 **Commandes utiles** :
 ```bash
 # Lister les notes d'un utilisateur
-ls -la ~/syncobsidian/backend/data/storage/1/notes/
+ls -la backend/data/storage/1/notes/
 
 # Voir le contenu d'une note
-cat ~/syncobsidian/backend/data/storage/1/notes/ma-note.md
+cat backend/data/storage/1/notes/ma-note.md
 
 # Supprimer une note manuellement (mettre aussi is_deleted=1 dans la BDD)
-rm ~/syncobsidian/backend/data/storage/1/notes/ma-note.md
+rm backend/data/storage/1/notes/ma-note.md
 
 # Voir l'espace disque utilisé par utilisateur
-du -sh ~/syncobsidian/backend/data/storage/*/
+du -sh backend/data/storage/*/
 ```
 
 > ⚠️ **Important** : Si vous supprimez un fichier manuellement, pensez à mettre à jour la base de données (marquer `is_deleted = 1`) sinon la synchronisation pourrait recréer le fichier.
