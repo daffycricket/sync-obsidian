@@ -15,6 +15,9 @@ services:
     environment:
       - DOMAIN=${DOMAIN}
       - DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     depends_on:
       - syncobsidian
 
