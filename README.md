@@ -485,6 +485,29 @@ du -sh backend/data/storage/*/
 
 > ⚠️ **Important** : Si vous supprimez un fichier manuellement, pensez à mettre à jour la base de données (marquer `is_deleted = 1`) sinon la synchronisation pourrait recréer le fichier.
 
+### Accès aux données en production (Docker)
+
+En production, les données sont dans un **volume Docker** et nécessitent `sudo` :
+
+```bash
+# Trouver le chemin du volume
+docker volume inspect backend_syncobsidian-data --format '{{ .Mountpoint }}'
+# → /var/lib/docker/volumes/backend_syncobsidian-data/_data
+
+# Lister le contenu
+sudo ls -la /var/lib/docker/volumes/backend_syncobsidian-data/_data
+
+# Accéder à SQLite
+sudo sqlite3 /var/lib/docker/volumes/backend_syncobsidian-data/_data/syncobsidian.db
+
+# Supprimer des utilisateurs de test
+sudo sqlite3 /var/lib/docker/volumes/backend_syncobsidian-data/_data/syncobsidian.db \
+  "DELETE FROM users WHERE username LIKE 'testuser_%';"
+
+# Supprimer les dossiers associés
+sudo rm -rf /var/lib/docker/volumes/backend_syncobsidian-data/_data/storage/2
+```
+
 ---
 
 ## License
