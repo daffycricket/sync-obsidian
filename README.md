@@ -499,13 +499,41 @@ sudo ls -la /var/lib/docker/volumes/backend_syncobsidian-data/_data
 
 # Accéder à SQLite
 sudo sqlite3 /var/lib/docker/volumes/backend_syncobsidian-data/_data/syncobsidian.db
+```
 
-# Supprimer des utilisateurs de test
-sudo sqlite3 /var/lib/docker/volumes/backend_syncobsidian-data/_data/syncobsidian.db \
-  "DELETE FROM users WHERE username LIKE 'testuser_%';"
+**Nettoyage des données de test** :
 
-# Supprimer les dossiers associés
+```sql
+-- Vérifier les utilisateurs de test
+SELECT id, username, email FROM users WHERE username LIKE 'testuser_%';
+
+-- Vérifier les notes associées
+SELECT n.id, u.username, n.path FROM notes n 
+JOIN users u ON n.user_id = u.id 
+WHERE u.username LIKE 'testuser_%';
+
+-- Vérifier les attachments associés
+SELECT a.id, u.username, a.path FROM attachments a 
+JOIN users u ON a.user_id = u.id 
+WHERE u.username LIKE 'testuser_%';
+
+-- Supprimer les notes des utilisateurs de test
+DELETE FROM notes WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'testuser_%');
+
+-- Supprimer les attachments des utilisateurs de test
+DELETE FROM attachments WHERE user_id IN (SELECT id FROM users WHERE username LIKE 'testuser_%');
+
+-- Supprimer les utilisateurs de test
+DELETE FROM users WHERE username LIKE 'testuser_%';
+
+-- Vérifier le résultat
+SELECT * FROM users;
+```
+
+```bash
+# Supprimer les dossiers de fichiers associés (remplacer 2, 3 par les IDs supprimés)
 sudo rm -rf /var/lib/docker/volumes/backend_syncobsidian-data/_data/storage/2
+sudo rm -rf /var/lib/docker/volumes/backend_syncobsidian-data/_data/storage/3
 ```
 
 ---
