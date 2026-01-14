@@ -406,6 +406,92 @@ docker compose -f docker-compose.prod.yml restart duckdns
 
 ---
 
+## 🗄️ Administration des données (sur le Pi)
+
+### Base de données SQLite
+
+La base de données se trouve dans `~/syncobsidian/backend/data/syncobsidian.db`.
+
+**Accès à la CLI SQLite** :
+```bash
+sqlite3 ~/syncobsidian/backend/data/syncobsidian.db
+```
+
+**Commandes utiles** :
+```sql
+-- Lister les tables
+.tables
+
+-- Voir la structure d'une table
+.schema users
+.schema notes
+.schema attachments
+
+-- Lister les utilisateurs
+SELECT id, username, email, created_at, is_active FROM users;
+
+-- Lister les notes d'un utilisateur (ex: user_id = 1)
+SELECT id, path, content_hash, modified_at, is_deleted FROM notes WHERE user_id = 1;
+
+-- Compter les notes par utilisateur
+SELECT u.username, COUNT(n.id) as nb_notes 
+FROM users u LEFT JOIN notes n ON u.id = n.user_id 
+GROUP BY u.id;
+
+-- Supprimer un utilisateur (cascade sur notes et attachments)
+DELETE FROM users WHERE id = 1;
+
+-- Quitter SQLite
+.quit
+```
+
+**Structure des tables** :
+
+| Table | Colonnes |
+|-------|----------|
+| `users` | `id`, `username`, `email`, `hashed_password`, `created_at`, `is_active` |
+| `notes` | `id`, `user_id`, `path`, `content_hash`, `modified_at`, `synced_at`, `is_deleted` |
+| `attachments` | `id`, `user_id`, `path`, `content_hash`, `size`, `mime_type`, `modified_at`, `synced_at`, `is_deleted` |
+
+### Fichiers (notes et attachments)
+
+Les fichiers sont stockés dans `~/syncobsidian/backend/data/storage/`.
+
+**Structure** :
+```
+data/storage/
+├── 1/                          # user_id = 1
+│   ├── notes/
+│   │   ├── dossier/
+│   │   │   └── ma-note.md
+│   │   └── autre-note.md
+│   └── attachments/
+│       └── images/
+│           └── photo.png
+├── 2/                          # user_id = 2
+│   └── notes/
+│       └── ...
+```
+
+**Commandes utiles** :
+```bash
+# Lister les notes d'un utilisateur
+ls -la ~/syncobsidian/backend/data/storage/1/notes/
+
+# Voir le contenu d'une note
+cat ~/syncobsidian/backend/data/storage/1/notes/ma-note.md
+
+# Supprimer une note manuellement (mettre aussi is_deleted=1 dans la BDD)
+rm ~/syncobsidian/backend/data/storage/1/notes/ma-note.md
+
+# Voir l'espace disque utilisé par utilisateur
+du -sh ~/syncobsidian/backend/data/storage/*/
+```
+
+> ⚠️ **Important** : Si vous supprimez un fichier manuellement, pensez à mettre à jour la base de données (marquer `is_deleted = 1`) sinon la synchronisation pourrait recréer le fichier.
+
+---
+
 ## License
 
 MIT
