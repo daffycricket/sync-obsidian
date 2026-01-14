@@ -71,7 +71,7 @@ Pour un déploiement accessible depuis Internet avec HTTPS :
 1. **Prérequis** :
    - Un serveur avec Docker (VM, VPS, machine locale...)
    - Un nom de domaine pointant vers l'IP publique du serveur
-   - Ports 443 (ou un port custom) accessibles depuis Internet
+   - Port 443 accessible depuis Internet (ou port custom + challenge DNS-01)
 
 2. **Configurer l'environnement** :
 ```bash
@@ -83,18 +83,129 @@ nano .env
 ```env
 SECRET_KEY=votre_cle_secrete_generee
 DOMAIN=sync.example.com
+
+# Si challenge DNS-01 (voir section Caddy ci-dessous)
+OVH_ENDPOINT=ovh-eu
+OVH_APPLICATION_KEY=xxx
+OVH_APPLICATION_SECRET=xxx
+OVH_CONSUMER_KEY=xxx
 ```
 
-3. **Lancer en production** :
+3. **Configurer Caddy** (voir section détaillée ci-dessous)
+
+4. **Lancer en production** :
 ```bash
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-Le fichier `docker-compose.prod.yml` inclut Caddy qui gère automatiquement les certificats Let's Encrypt.
-
-4. **Configurer Obsidian** :
+5. **Configurer Obsidian** :
    - **URL du serveur** : `https://sync.example.com` (avec le port si différent de 443)
    - **Identifiants** : ceux créés via `/auth/register`
+
+---
+
+## 🌐 Caddy - Reverse Proxy HTTPS
+
+### Rôle de Caddy
+
+Caddy est un reverse proxy qui gère automatiquement :
+- **Certificats HTTPS** : obtention et renouvellement automatique via Let's Encrypt
+- **Proxy** : redirige les requêtes HTTPS vers l'API (HTTP interne)
+- **Sécurité** : headers de sécurité (HSTS, X-Frame-Options, etc.)
+
+```
+Internet (HTTPS:443)
+        │
+        ▼
+    ┌───────┐
+    │ Caddy │  ← TLS/HTTPS + certificats Let's Encrypt
+    └───┬───┘
+        │ HTTP:8000
+        ▼
+┌───────────────┐
+│ SyncObsidian  │  ← API FastAPI
+└───────────────┘
+```
+
+### Configuration du Caddyfile
+
+Le fichier `backend/Caddyfile` définit le comportement de Caddy :
+
+```caddyfile
+{$DOMAIN:sync.example.com} {
+    # Configuration TLS (voir options ci-dessous)
+    tls {
+        # ...
+    }
+    
+    # Proxy vers l'API
+    reverse_proxy syncobsidian:8000
+    
+    # Headers de sécurité
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+    }
+}
+```
+
+### Méthodes d'obtention du certificat
+
+#### Option 1 : Challenge HTTP-01 (par défaut)
+
+Si le port 443 est directement accessible depuis Internet :
+
+```caddyfile
+{$DOMAIN:sync.example.com} {
+    # Caddy obtient automatiquement le certificat
+    reverse_proxy syncobsidian:8000
+}
+```
+
+Let's Encrypt contacte votre serveur sur le port 80 pour vérifier que vous contrôlez le domaine.
+
+#### Option 2 : Challenge DNS-01 (recommandé si port 80/443 bloqué)
+
+Si vous ne pouvez pas ouvrir les ports 80/443 (FAI restrictif, port custom...), utilisez le challenge DNS-01. Let's Encrypt vérifie via un enregistrement DNS TXT.
+
+**Exemple avec OVH** :
+
+1. Créer des credentials API sur [api.ovh.com/createToken](https://api.ovh.com/createToken) avec les droits `GET/POST/PUT/DELETE /domain/zone/*`
+
+2. Configurer le Caddyfile :
+```caddyfile
+{$DOMAIN:sync.example.com} {
+    tls {
+        dns ovh {
+            endpoint {$OVH_ENDPOINT}
+            application_key {$OVH_APPLICATION_KEY}
+            application_secret {$OVH_APPLICATION_SECRET}
+            consumer_key {$OVH_CONSUMER_KEY}
+        }
+    }
+    reverse_proxy syncobsidian:8000
+}
+```
+
+3. Ajouter les variables dans `.env` et les passer au conteneur Caddy dans `docker-compose.prod.yml`
+
+**Autres providers DNS supportés** : Cloudflare, Google Cloud DNS, AWS Route53, Azure DNS, etc.  
+→ Voir [github.com/caddy-dns](https://github.com/caddy-dns) pour la liste complète.
+
+### Personnaliser l'image Caddy
+
+Pour le challenge DNS-01, il faut une image Caddy avec le plugin DNS. Le fichier `Dockerfile.caddy` :
+
+```dockerfile
+FROM caddy:2-builder AS builder
+RUN xcaddy build --with github.com/caddy-dns/ovh
+
+FROM caddy:2-alpine
+COPY --from=builder /usr/bin/caddy /usr/bin/caddy
+```
+
+Remplacer `ovh` par votre provider si différent.
 
 ---
 
