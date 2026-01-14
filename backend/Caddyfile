@@ -1,10 +1,12 @@
-{$DOMAIN:mon-vault.duckdns.org} {
-    # TLS avec challenge DNS-01 via DuckDNS
+{$DOMAIN:vault.mon-domaine.fr} {
+    # TLS avec challenge DNS-01 via OVH
     tls {
-        dns duckdns {$DUCKDNS_TOKEN}
-        # Désactiver la vérification de propagation DNS
-        # (les serveurs DNS de DuckDNS ne sont pas joignables)
-        propagation_timeout -1
+        dns ovh {
+            endpoint {$OVH_ENDPOINT}
+            application_key {$OVH_APPLICATION_KEY}
+            application_secret {$OVH_APPLICATION_SECRET}
+            consumer_key {$OVH_CONSUMER_KEY}
+        }
     }
     
     reverse_proxy syncobsidian:8000

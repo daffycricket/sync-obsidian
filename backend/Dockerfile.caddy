@@ -1,8 +1,8 @@
-# Image Caddy avec le plugin DuckDNS pour le challenge DNS-01
+# Image Caddy avec le plugin OVH pour le challenge DNS-01
 FROM caddy:2-builder AS builder
 
 RUN xcaddy build \
-    --with github.com/caddy-dns/duckdns
+    --with github.com/caddy-dns/ovh
 
 FROM caddy:2-alpine
 

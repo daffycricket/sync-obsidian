@@ -1,5 +1,5 @@
 services:
-  # Reverse proxy avec HTTPS automatique (Let's Encrypt via DNS-01)
+  # Reverse proxy avec HTTPS automatique (Let's Encrypt via DNS-01 OVH)
   caddy:
     build:
       context: .
@@ -14,7 +14,10 @@ services:
       - caddy-config:/config
     environment:
       - DOMAIN=${DOMAIN}
-      - DUCKDNS_TOKEN=${DUCKDNS_TOKEN}
+      - OVH_ENDPOINT=${OVH_ENDPOINT}
+      - OVH_APPLICATION_KEY=${OVH_APPLICATION_KEY}
+      - OVH_APPLICATION_SECRET=${OVH_APPLICATION_SECRET}
+      - OVH_CONSUMER_KEY=${OVH_CONSUMER_KEY}
     dns:
       - 8.8.8.8
       - 1.1.1.1
@@ -35,18 +38,6 @@ services:
       - DATABASE_URL=sqlite+aiosqlite:///./data/syncobsidian.db
       - STORAGE_PATH=./data/storage
       - ACCESS_TOKEN_EXPIRE_MINUTES=1440
-
-  # Mise à jour automatique de l'IP DuckDNS
-  duckdns:
-    image: lscr.io/linuxserver/duckdns:latest
-    container_name: duckdns
-    restart: unless-stopped
-    environment:
-      - PUID=1000
-      - PGID=1000
-      - TZ=Europe/Paris
-      - SUBDOMAINS=${DUCKDNS_SUBDOMAIN}
-      - TOKEN=${DUCKDNS_TOKEN}
 
 volumes:
   syncobsidian-data:
