@@ -102,6 +102,52 @@ docker compose -f docker-compose.prod.yml up -d
    - **URL du serveur** : `https://sync.example.com` (avec le port si différent de 443)
    - **Identifiants** : ceux créés via `/auth/register`
 
+### Mise à jour du serveur
+
+Pour mettre à jour le backend après avoir récupéré les dernières modifications :
+
+```bash
+# 1. Aller dans le répertoire backend
+cd ~/apps/sync-obsidian/backend
+# (ou le chemin où se trouve ton repo)
+
+# 2. Récupérer les modifications
+git pull
+
+# 3. Reconstruire et redémarrer le service syncobsidian uniquement
+docker compose -f docker-compose.prod.yml up -d --build syncobsidian
+```
+
+**Explication** :
+- `--build` : Reconstruit l'image Docker avec le nouveau code
+- `syncobsidian` : Reconstruit uniquement le service API (pas Caddy)
+- `-d` : Mode détaché (en arrière-plan)
+
+**Alternative** : Reconstruire tous les services (rarement nécessaire) :
+```bash
+docker compose -f docker-compose.prod.yml up -d --build
+```
+
+**Vérifier que ça fonctionne** :
+```bash
+# Voir les logs du service
+docker compose -f docker-compose.prod.yml logs syncobsidian
+
+# Vérifier le statut
+docker compose -f docker-compose.prod.yml ps
+```
+
+**Note** : Si la connexion SSH se coupe pendant le build :
+```bash
+# Vérifier que le build est terminé et le conteneur démarré
+docker compose -f docker-compose.prod.yml ps
+
+# Si le conteneur n'est pas démarré, relancer
+docker compose -f docker-compose.prod.yml up -d
+```
+
+**Important** : Le service `syncobsidian` est le seul à reconstruire après un changement de code backend. Caddy ne change que si tu modifies `Dockerfile.caddy` ou `Caddyfile`.
+
 ---
 
 ## 🌐 Caddy - Reverse Proxy HTTPS
