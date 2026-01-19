@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
@@ -9,6 +9,19 @@ from .schemas import (
     SyncRequest, SyncResponse
 )
 from . import storage
+
+
+def normalize_datetime(dt: datetime) -> datetime:
+    """
+    Normalise un datetime pour la comparaison.
+    Supprime les infos de timezone pour comparer en UTC naive.
+    """
+    if dt is None:
+        return None
+    if dt.tzinfo is not None:
+        # Convertir en UTC puis supprimer la timezone
+        return dt.astimezone(timezone.utc).replace(tzinfo=None)
+    return dt
 
 
 async def get_server_notes(
@@ -64,56 +77,61 @@ async def process_sync(
         if server_note is None:
             # Note n'existe pas sur le serveur -> le serveur veut la recevoir
             notes_to_push.append(client_note.path)
-        elif client_note.is_deleted:
-            # Client signale une suppression
-            if not server_note.is_deleted:
-                if client_note.modified_at >= server_note.modified_at:
-                    # Suppression client est plus récente -> accepter
+        else:
+            # Normaliser les timestamps pour comparaison
+            client_time = normalize_datetime(client_note.modified_at)
+            server_time_note = normalize_datetime(server_note.modified_at)
+            
+            if client_note.is_deleted:
+                # Client signale une suppression
+                if not server_note.is_deleted:
+                    if client_time >= server_time_note:
+                        # Suppression client est plus récente -> accepter
+                        notes_to_push.append(client_note.path)
+                    else:
+                        # Serveur a été modifié après la suppression -> conflit
+                        conflicts.append(NoteMetadata(
+                            path=server_note.path,
+                            content_hash=server_note.content_hash,
+                            modified_at=server_note.modified_at,
+                            is_deleted=server_note.is_deleted
+                        ))
+                # Si déjà supprimé sur le serveur, rien à faire
+            elif server_note.is_deleted:
+                # Serveur a supprimé mais client a encore la note
+                if client_time > server_time_note:
+                    # Client a modifié après la suppression -> recréer la note
                     notes_to_push.append(client_note.path)
                 else:
-                    # Serveur a été modifié après la suppression -> conflit
-                    conflicts.append(NoteMetadata(
+                    # Suppression serveur est plus récente -> propager au client
+                    notes_to_pull.append(NoteMetadata(
                         path=server_note.path,
                         content_hash=server_note.content_hash,
                         modified_at=server_note.modified_at,
-                        is_deleted=server_note.is_deleted
+                        is_deleted=True
                     ))
-            # Si déjà supprimé sur le serveur, rien à faire
-        elif server_note.is_deleted:
-            # Serveur a supprimé mais client a encore la note
-            if client_note.modified_at > server_note.modified_at:
-                # Client a modifié après la suppression -> recréer la note
+            elif server_note.content_hash == client_note.content_hash:
+                # Même hash -> pas de changement
+                pass
+            elif client_time > server_time_note:
+                # Client plus récent -> le serveur veut recevoir la mise à jour
                 notes_to_push.append(client_note.path)
-            else:
-                # Suppression serveur est plus récente -> propager au client
+            elif server_time_note > client_time:
+                # Serveur plus récent -> client doit récupérer
                 notes_to_pull.append(NoteMetadata(
                     path=server_note.path,
                     content_hash=server_note.content_hash,
                     modified_at=server_note.modified_at,
-                    is_deleted=True
+                    is_deleted=server_note.is_deleted
                 ))
-        elif server_note.content_hash == client_note.content_hash:
-            # Même hash -> pas de changement
-            pass
-        elif client_note.modified_at > server_note.modified_at:
-            # Client plus récent -> le serveur veut recevoir la mise à jour
-            notes_to_push.append(client_note.path)
-        elif server_note.modified_at > client_note.modified_at:
-            # Serveur plus récent -> client doit récupérer
-            notes_to_pull.append(NoteMetadata(
-                path=server_note.path,
-                content_hash=server_note.content_hash,
-                modified_at=server_note.modified_at,
-                is_deleted=server_note.is_deleted
-            ))
-        else:
-            # Même timestamp mais hash différent -> conflit
-            conflicts.append(NoteMetadata(
-                path=server_note.path,
-                content_hash=server_note.content_hash,
-                modified_at=server_note.modified_at,
-                is_deleted=server_note.is_deleted
-            ))
+            else:
+                # Même timestamp mais hash différent -> conflit
+                conflicts.append(NoteMetadata(
+                    path=server_note.path,
+                    content_hash=server_note.content_hash,
+                    modified_at=server_note.modified_at,
+                    is_deleted=server_note.is_deleted
+                ))
     
     # Notes sur le serveur que le client n'a pas mentionnées
     for path, server_note in server_notes_map.items():
