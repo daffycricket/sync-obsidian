@@ -190,6 +190,22 @@ export class SyncObsidianSettingTab extends PluginSettingTab {
                     })
             );
 
+        // Bouton pour vider le rapport
+        new Setting(containerEl)
+            .setName("Vider le rapport")
+            .setDesc("Supprimer tous les rapports de synchronisation (gagner de la place en local)")
+            .addButton((button) =>
+                button
+                    .setButtonText("Vider")
+                    .setWarning()
+                    .onClick(async () => {
+                        this.plugin.settings.syncHistory = [];
+                        await this.plugin.saveSettings();
+                        this.display();
+                        new Notice("Rapport vidé");
+                    })
+            );
+
         // Zone du rapport
         const reportContainer = containerEl.createEl("div", {
             cls: "sync-report-container",
@@ -205,14 +221,27 @@ export class SyncObsidianSettingTab extends PluginSettingTab {
             font-size: 12px;
             white-space: pre-wrap;
             word-break: break-word;
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
         `;
 
         // Générer le contenu du rapport
         const reportContent = this.generateReportContent();
-        reportContainer.createEl("pre", {
+        const reportPre = reportContainer.createEl("pre", {
             text: reportContent,
             cls: "sync-report-content",
         });
+        // S'assurer que le texte est sélectionnable
+        reportPre.style.cssText = `
+            user-select: text;
+            -webkit-user-select: text;
+            -moz-user-select: text;
+            -ms-user-select: text;
+            margin: 0;
+            padding: 0;
+        `;
     }
 
     /**

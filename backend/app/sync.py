@@ -59,9 +59,14 @@ async def process_sync(
     """
     server_time = datetime.utcnow()
     
-    # Récupérer les notes serveur modifiées depuis le dernier sync
-    server_notes = await get_server_notes(db, user.id, request.last_sync)
-    server_notes_map = {n.path: n for n in server_notes}
+    # Récupérer TOUTES les notes du serveur pour la comparaison
+    # (pas seulement celles modifiées depuis last_sync)
+    all_server_notes = await get_server_notes(db, user.id, since=None)
+    server_notes_map = {n.path: n for n in all_server_notes}
+    
+    # Récupérer les notes serveur modifiées depuis le dernier sync (pour notes_to_pull)
+    server_notes_changed = await get_server_notes(db, user.id, request.last_sync)
+    server_notes_changed_paths = {n.path for n in server_notes_changed}
     
     # Notes envoyées par le client
     client_notes_map = {n.path: n for n in request.notes}
@@ -104,6 +109,7 @@ async def process_sync(
                     notes_to_push.append(client_note.path)
                 else:
                     # Suppression serveur est plus récente -> propager au client
+                    # Les suppressions sont toujours propagées (même si pas modifiées depuis last_sync)
                     notes_to_pull.append(NoteMetadata(
                         path=server_note.path,
                         content_hash=server_note.content_hash,
@@ -118,12 +124,14 @@ async def process_sync(
                 notes_to_push.append(client_note.path)
             elif server_time_note > client_time:
                 # Serveur plus récent -> client doit récupérer
-                notes_to_pull.append(NoteMetadata(
-                    path=server_note.path,
-                    content_hash=server_note.content_hash,
-                    modified_at=server_note.modified_at,
-                    is_deleted=server_note.is_deleted
-                ))
+                # Mais seulement si la note a été modifiée depuis last_sync
+                if server_note.path in server_notes_changed_paths:
+                    notes_to_pull.append(NoteMetadata(
+                        path=server_note.path,
+                        content_hash=server_note.content_hash,
+                        modified_at=server_note.modified_at,
+                        is_deleted=server_note.is_deleted
+                    ))
             else:
                 # Même timestamp mais hash différent -> conflit
                 conflicts.append(NoteMetadata(
@@ -139,12 +147,15 @@ async def process_sync(
             # Ne pas envoyer les notes supprimées si le client ne les connaît pas
             # (évite de propager des suppressions de notes jamais vues)
             if not server_note.is_deleted:
-                notes_to_pull.append(NoteMetadata(
-                    path=server_note.path,
-                    content_hash=server_note.content_hash,
-                    modified_at=server_note.modified_at,
-                    is_deleted=server_note.is_deleted
-                ))
+                # Si last_sync est None, c'est un nouveau device -> envoyer toutes les notes
+                # Sinon, envoyer seulement celles modifiées depuis last_sync
+                if request.last_sync is None or path in server_notes_changed_paths:
+                    notes_to_pull.append(NoteMetadata(
+                        path=server_note.path,
+                        content_hash=server_note.content_hash,
+                        modified_at=server_note.modified_at,
+                        is_deleted=server_note.is_deleted
+                    ))
     
     # Même logique pour les pièces jointes
     attachments_to_pull: List[AttachmentMetadata] = []
