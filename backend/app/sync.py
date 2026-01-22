@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timezone
 from typing import List, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -9,6 +10,8 @@ from .schemas import (
     SyncRequest, SyncResponse
 )
 from . import storage
+
+logger = logging.getLogger(__name__)
 
 
 def normalize_datetime(dt: datetime) -> datetime:
@@ -185,10 +188,11 @@ async def push_notes(
     """
     success = []
     failed = []
+    user_id = user.id  # Capturer l'ID avant le try/except pour éviter les problèmes SQLAlchemy
     
     for note in notes:
         try:
-            existing = await get_note_by_path(db, user.id, note.path)
+            existing = await get_note_by_path(db, user_id, note.path)
             
             if note.is_deleted:
                 # Suppression : supprimer le fichier physique et marquer en base
@@ -202,7 +206,7 @@ async def push_notes(
                 else:
                     # Créer une entrée pour tracer la suppression
                     new_note = Note(
-                        user_id=user.id,
+                        user_id=user_id,
                         path=note.path,
                         content_hash="",
                         modified_at=note.modified_at,
@@ -212,7 +216,7 @@ async def push_notes(
                     db.add(new_note)
             else:
                 # Création/modification normale
-                computed_hash = await storage.save_note(user.id, note.path, note.content)
+                computed_hash = await storage.save_note(user_id, note.path, note.content)
                 
                 if existing:
                     existing.content_hash = computed_hash
@@ -221,7 +225,7 @@ async def push_notes(
                     existing.is_deleted = False
                 else:
                     new_note = Note(
-                        user_id=user.id,
+                        user_id=user_id,
                         path=note.path,
                         content_hash=computed_hash,
                         modified_at=note.modified_at,
@@ -233,7 +237,18 @@ async def push_notes(
             await db.commit()
             success.append(note.path)
             
+        except ValueError as e:
+            # Erreur de validation de chemin (path traversal, etc.)
+            logger.warning(
+                f"Chemin invalide rejeté - user_id={user_id}, path={note.path}, error={str(e)}"
+            )
+            failed.append(note.path)
+            await db.rollback()
         except Exception as e:
+            logger.error(
+                f"Erreur lors de la sauvegarde de la note - user_id={user_id}, path={note.path}, error={str(e)}",
+                exc_info=True
+            )
             failed.append(note.path)
             await db.rollback()
     
@@ -250,28 +265,36 @@ async def pull_notes(
     Pour les notes supprimées, retourne is_deleted=True avec contenu vide.
     """
     notes = []
+    user_id = user.id  # Capturer l'ID avant la boucle pour éviter les problèmes SQLAlchemy
     
     for path in paths:
-        note_record = await get_note_by_path(db, user.id, path)
-        if note_record:
-            if note_record.is_deleted:
-                # Note supprimée : renvoyer les métadonnées avec contenu vide
-                notes.append(NoteContent(
-                    path=path,
-                    content="",
-                    content_hash="",
-                    modified_at=note_record.modified_at,
-                    is_deleted=True
-                ))
-            else:
-                content = await storage.read_note(user.id, path)
-                if content is not None:
+        try:
+            note_record = await get_note_by_path(db, user_id, path)
+            if note_record:
+                if note_record.is_deleted:
+                    # Note supprimée : renvoyer les métadonnées avec contenu vide
                     notes.append(NoteContent(
                         path=path,
-                        content=content,
-                        content_hash=note_record.content_hash,
+                        content="",
+                        content_hash="",
                         modified_at=note_record.modified_at,
-                        is_deleted=False
+                        is_deleted=True
                     ))
+                else:
+                    content = await storage.read_note(user_id, path)
+                    if content is not None:
+                        notes.append(NoteContent(
+                            path=path,
+                            content=content,
+                            content_hash=note_record.content_hash,
+                            modified_at=note_record.modified_at,
+                            is_deleted=False
+                        ))
+        except ValueError as e:
+            # Erreur de validation de chemin (path traversal, etc.)
+            logger.warning(
+                f"Chemin invalide rejeté lors du pull - user_id={user_id}, path={path}, error={str(e)}"
+            )
+            # Ne pas ajouter la note à la liste (comme si elle n'existait pas)
     
     return notes
