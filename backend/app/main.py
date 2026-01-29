@@ -18,13 +18,14 @@ from .schemas import (
     SyncRequest, SyncResponse,
     PushNotesRequest, PushNotesResponse,
     PullNotesRequest, PullNotesResponse,
-    SyncedNotesResponse
+    SyncedNotesResponse,
+    CompareRequest, CompareResponse
 )
 from .auth import (
     get_password_hash, authenticate_user,
     create_access_token, get_current_user
 )
-from .sync import process_sync, push_notes, pull_notes, get_synced_notes
+from .sync import process_sync, push_notes, pull_notes, get_synced_notes, compare_notes
 
 
 @asynccontextmanager
@@ -195,6 +196,19 @@ async def get_notes(
         modified_after=modified_after,
         modified_before=modified_before
     )
+
+
+@app.post("/sync/compare", response_model=CompareResponse)
+async def sync_compare(
+    request: CompareRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Compare les notes du client avec celles du serveur.
+    Retourne les différences catégorisées : à pusher, à puller, conflits, supprimées.
+    """
+    return await compare_notes(db, current_user, request.notes)
 
 
 if __name__ == "__main__":

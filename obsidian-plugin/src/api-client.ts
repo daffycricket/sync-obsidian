@@ -7,6 +7,10 @@ import {
     PushNotesResponse,
     PullNotesRequest,
     PullNotesResponse,
+    SyncedNotesResponse,
+    SyncedNotesParams,
+    CompareRequest,
+    CompareResponse,
 } from "./types";
 
 export class ApiClient {
@@ -101,5 +105,24 @@ export class ApiClient {
 
     async pullNotes(request: PullNotesRequest): Promise<PullNotesResponse> {
         return this.request<PullNotesResponse>("/sync/pull", "POST", request);
+    }
+
+    // GET /sync/notes - Visualisation des notes synchronisées
+    async getSyncedNotes(params: SyncedNotesParams = {}): Promise<SyncedNotesResponse> {
+        const queryParams = new URLSearchParams();
+        if (params.page) queryParams.set("page", String(params.page));
+        if (params.page_size) queryParams.set("page_size", String(params.page_size));
+        if (params.include_deleted) queryParams.set("include_deleted", "true");
+        if (params.path_filter) queryParams.set("path_filter", params.path_filter);
+
+        const query = queryParams.toString();
+        const endpoint = query ? `/sync/notes?${query}` : "/sync/notes";
+
+        return this.request<SyncedNotesResponse>(endpoint, "GET");
+    }
+
+    // POST /sync/compare - Comparaison client/serveur
+    async compare(request: CompareRequest): Promise<CompareResponse> {
+        return this.request<CompareResponse>("/sync/compare", "POST", request);
     }
 }

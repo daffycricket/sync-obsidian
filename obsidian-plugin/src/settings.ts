@@ -1,7 +1,7 @@
 import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import SyncObsidianPlugin from "./main";
 import { ApiClient } from "./api-client";
-import { SyncReportEntry } from "./types";
+import { SyncReportEntry, SyncedNotesResponse, CompareResponse } from "./types";
 
 export class SyncObsidianSettingTab extends PluginSettingTab {
     plugin: SyncObsidianPlugin;
@@ -138,6 +138,38 @@ export class SyncObsidianSettingTab extends PluginSettingTab {
                         this.display(); // Rafraîchir l'affichage
                     })
             );
+
+        // Section Notes synchronisées
+        containerEl.createEl("h3", { text: "Notes synchronisées" });
+
+        // Bouton pour ouvrir sync-viewer dans le navigateur
+        new Setting(containerEl)
+            .setName("Visualiser les notes sur le serveur")
+            .setDesc("Ouvrir la page de visualisation dans le navigateur")
+            .addButton((button) =>
+                button
+                    .setButtonText("Ouvrir sync-viewer")
+                    .onClick(async () => {
+                        await this.openSyncViewer();
+                    })
+            );
+
+        // Bouton pour comparer client/serveur
+        new Setting(containerEl)
+            .setName("Comparer avec le serveur")
+            .setDesc("Analyser les différences entre vos notes locales et le serveur")
+            .addButton((button) =>
+                button
+                    .setButtonText("Comparer")
+                    .onClick(async () => {
+                        await this.runCompare(containerEl);
+                    })
+            );
+
+        // Container pour les résultats de comparaison
+        const compareResultContainer = containerEl.createEl("div", {
+            attr: { id: "compare-result-container" }
+        });
 
         // Section Rapport de synchronisation
         containerEl.createEl("h3", { text: "Rapport de synchronisation" });
@@ -482,6 +514,155 @@ export class SyncObsidianSettingTab extends PluginSettingTab {
             }
         } catch (error) {
             new Notice(`❌ Erreur: ${error.message}`);
+        }
+    }
+
+    private async openSyncViewer(): Promise<void> {
+        const { serverUrl, accessToken } = this.plugin.settings;
+
+        if (!serverUrl || !accessToken) {
+            new Notice("Veuillez vous connecter d'abord");
+            return;
+        }
+
+        const url = `${serverUrl}/sync-viewer?token=${accessToken}`;
+        window.open(url, "_blank");
+    }
+
+    private async runCompare(containerEl: HTMLElement): Promise<void> {
+        const { serverUrl, accessToken } = this.plugin.settings;
+
+        if (!serverUrl || !accessToken) {
+            new Notice("Veuillez vous connecter d'abord");
+            return;
+        }
+
+        const apiClient = new ApiClient(serverUrl, accessToken);
+
+        // Récupérer le container de résultat
+        const resultContainer = containerEl.querySelector("#compare-result-container");
+        if (!resultContainer) return;
+
+        resultContainer.empty();
+        resultContainer.createEl("p", { text: "Analyse en cours...", cls: "mod-muted" });
+
+        try {
+            // Collecter les notes locales
+            const localNotes = await this.collectLocalNotes();
+
+            // Appeler l'API de comparaison
+            const result = await apiClient.compare({ notes: localNotes });
+
+            // Afficher les résultats
+            this.displayCompareResults(resultContainer as HTMLElement, result);
+            new Notice(`Comparaison terminée: ${result.summary.identical} identiques, ${result.summary.to_push} à envoyer, ${result.summary.to_pull} à recevoir`);
+        } catch (error) {
+            resultContainer.empty();
+            resultContainer.createEl("p", {
+                text: `Erreur: ${error.message}`,
+                cls: "mod-warning"
+            });
+            new Notice(`Erreur de comparaison: ${error.message}`);
+        }
+    }
+
+    private async collectLocalNotes(): Promise<Array<{path: string, content_hash: string, modified_at: string}>> {
+        const notes: Array<{path: string, content_hash: string, modified_at: string}> = [];
+        const files = this.app.vault.getMarkdownFiles();
+
+        for (const file of files) {
+            const content = await this.app.vault.read(file);
+            const hash = await this.hashContent(content);
+            notes.push({
+                path: file.path,
+                content_hash: hash,
+                modified_at: new Date(file.stat.mtime).toISOString()
+            });
+        }
+
+        return notes;
+    }
+
+    private async hashContent(content: string): Promise<string> {
+        const encoder = new TextEncoder();
+        const data = encoder.encode(content);
+        const hashBuffer = await crypto.subtle.digest("SHA-256", data);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    private displayCompareResults(container: HTMLElement, result: CompareResponse): void {
+        container.empty();
+
+        // Style du container
+        container.style.cssText = `
+            background: var(--background-secondary);
+            border-radius: 8px;
+            padding: 16px;
+            margin-top: 12px;
+        `;
+
+        // Résumé
+        const summary = result.summary;
+        container.createEl("h4", { text: "Résultat de la comparaison" });
+
+        const statsDiv = container.createEl("div", { cls: "compare-stats" });
+        statsDiv.style.cssText = "display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px;";
+
+        this.createStatCard(statsDiv, "📊 Client", String(summary.total_client));
+        this.createStatCard(statsDiv, "☁️ Serveur", String(summary.total_server));
+        this.createStatCard(statsDiv, "✅ Identiques", String(summary.identical));
+        this.createStatCard(statsDiv, "↑ À envoyer", String(summary.to_push));
+        this.createStatCard(statsDiv, "↓ À recevoir", String(summary.to_pull));
+        this.createStatCard(statsDiv, "⚠️ Conflits", String(summary.conflicts));
+
+        // Détails si nécessaire
+        if (result.to_push.length > 0) {
+            this.createFileList(container, "↑ À envoyer au serveur", result.to_push.map(n => `${n.path} (${n.reason})`));
+        }
+
+        if (result.to_pull.length > 0) {
+            this.createFileList(container, "↓ À récupérer du serveur", result.to_pull.map(n => `${n.path} (${n.reason})`));
+        }
+
+        if (result.conflicts.length > 0) {
+            this.createFileList(container, "⚠️ Conflits", result.conflicts.map(n => n.path));
+        }
+
+        if (result.deleted_on_server.length > 0) {
+            this.createFileList(container, "🗑️ Supprimées sur serveur", result.deleted_on_server.map(n => n.path));
+        }
+    }
+
+    private createStatCard(parent: HTMLElement, label: string, value: string): void {
+        const card = parent.createEl("div");
+        card.style.cssText = `
+            background: var(--background-primary);
+            padding: 8px 12px;
+            border-radius: 6px;
+            text-align: center;
+        `;
+        card.createEl("div", { text: value, cls: "stat-value" }).style.cssText = "font-size: 20px; font-weight: bold;";
+        card.createEl("div", { text: label, cls: "stat-label" }).style.cssText = "font-size: 12px; color: var(--text-muted);";
+    }
+
+    private createFileList(parent: HTMLElement, title: string, files: string[]): void {
+        const section = parent.createEl("details");
+        section.style.cssText = "margin-top: 12px;";
+
+        const summaryEl = section.createEl("summary");
+        summaryEl.style.cssText = "cursor: pointer; font-weight: 500;";
+        summaryEl.setText(`${title} (${files.length})`);
+
+        const list = section.createEl("ul");
+        list.style.cssText = "margin: 8px 0; padding-left: 20px; font-size: 12px;";
+
+        for (const file of files.slice(0, 20)) {
+            list.createEl("li", { text: file });
+        }
+
+        if (files.length > 20) {
+            list.createEl("li", { text: `... et ${files.length - 20} autres`, cls: "mod-muted" });
         }
     }
 }

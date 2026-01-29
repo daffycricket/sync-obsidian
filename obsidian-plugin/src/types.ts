@@ -134,3 +134,109 @@ export interface PullNotesResponse {
 }
 
 export type SyncStatus = "idle" | "syncing" | "success" | "error";
+
+// ============================================
+// GET /sync/notes - Visualisation des notes synchronisées
+// ============================================
+
+export interface ReferencedAttachment {
+    path: string;
+    exists: boolean;
+    size_bytes: number | null;
+}
+
+export interface SyncedNoteInfo {
+    path: string;
+    content_hash: string;
+    modified_at: string;
+    synced_at: string;
+    is_deleted: boolean;
+    size_bytes: number | null;
+    referenced_attachments: ReferencedAttachment[];
+}
+
+export interface SyncedAttachmentInfo {
+    path: string;
+    content_hash: string;
+    modified_at: string;
+    synced_at: string;
+    is_deleted: boolean;
+    size_bytes: number;
+    mime_type: string | null;
+}
+
+export interface SyncedNotesResponse {
+    total_count: number;
+    page: number;
+    page_size: number;
+    total_pages: number;
+    notes: SyncedNoteInfo[];
+    attachments: SyncedAttachmentInfo[];
+}
+
+export interface SyncedNotesParams {
+    page?: number;
+    page_size?: number;
+    include_deleted?: boolean;
+    path_filter?: string;
+}
+
+// ============================================
+// POST /sync/compare - Comparaison client/serveur
+// ============================================
+
+export interface ClientNoteInfo {
+    path: string;
+    content_hash: string;
+    modified_at: string;
+}
+
+export interface CompareRequest {
+    notes: ClientNoteInfo[];
+}
+
+export interface CompareSummary {
+    total_client: number;
+    total_server: number;
+    to_push: number;
+    to_pull: number;
+    conflicts: number;
+    identical: number;
+    deleted_on_server: number;
+}
+
+export interface NoteToPush {
+    path: string;
+    reason: string;
+    client_modified: string;
+}
+
+export interface NoteToPull {
+    path: string;
+    reason: string;
+    server_modified: string;
+    client_modified: string | null;
+}
+
+export interface NoteConflict {
+    path: string;
+    reason: string;
+    client_hash: string;
+    server_hash: string;
+    client_modified: string;
+    server_modified: string;
+}
+
+export interface NoteDeletedOnServer {
+    path: string;
+    deleted_at: string;
+}
+
+export interface CompareResponse {
+    server_time: string;
+    summary: CompareSummary;
+    to_push: NoteToPush[];
+    to_pull: NoteToPull[];
+    conflicts: NoteConflict[];
+    deleted_on_server: NoteDeletedOnServer[];
+}

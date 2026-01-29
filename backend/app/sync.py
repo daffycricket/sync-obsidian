@@ -10,7 +10,9 @@ from .schemas import (
     NoteMetadata, NoteContent, AttachmentMetadata,
     SyncRequest, SyncResponse,
     SyncedNoteInfo, SyncedAttachmentInfo, SyncedNotesResponse,
-    ReferencedAttachment
+    ReferencedAttachment,
+    ClientNoteInfo, CompareRequest, CompareResponse,
+    CompareSummary, NoteToPush, NoteToPull, NoteConflict, NoteDeletedOnServer
 )
 from . import storage
 
@@ -449,4 +451,117 @@ async def get_synced_notes(
         total_pages=total_pages,
         notes=notes_list,
         attachments=attachments_list
+    )
+
+
+async def compare_notes(
+    db: AsyncSession,
+    user: User,
+    client_notes: List[ClientNoteInfo]
+) -> CompareResponse:
+    """
+    Compare les notes du client avec celles du serveur.
+    Retourne les différences catégorisées par action nécessaire.
+    """
+    server_time = datetime.utcnow()
+    user_id = user.id
+
+    # Récupérer toutes les notes du serveur
+    all_server_notes = await get_server_notes(db, user_id, since=None)
+    server_notes_map = {n.path: n for n in all_server_notes}
+
+    # Map des notes client
+    client_notes_map = {n.path: n for n in client_notes}
+
+    to_push: List[NoteToPush] = []
+    to_pull: List[NoteToPull] = []
+    conflicts: List[NoteConflict] = []
+    deleted_on_server: List[NoteDeletedOnServer] = []
+    identical_count = 0
+
+    # Analyser chaque note du client
+    for client_note in client_notes:
+        server_note = server_notes_map.get(client_note.path)
+
+        if server_note is None:
+            # Note existe côté client mais pas serveur -> à pusher
+            to_push.append(NoteToPush(
+                path=client_note.path,
+                reason="not_on_server",
+                client_modified=client_note.modified_at
+            ))
+        elif server_note.is_deleted:
+            # Note supprimée sur le serveur
+            deleted_on_server.append(NoteDeletedOnServer(
+                path=server_note.path,
+                deleted_at=server_note.modified_at
+            ))
+        else:
+            # Normaliser les timestamps pour comparaison
+            client_time = normalize_datetime(client_note.modified_at)
+            server_time_note = normalize_datetime(server_note.modified_at)
+
+            if server_note.content_hash == client_note.content_hash:
+                # Même hash -> identique
+                identical_count += 1
+            elif client_time > server_time_note:
+                # Client plus récent -> à pusher
+                to_push.append(NoteToPush(
+                    path=client_note.path,
+                    reason="client_newer",
+                    client_modified=client_note.modified_at
+                ))
+            elif server_time_note > client_time:
+                # Serveur plus récent -> à puller
+                to_pull.append(NoteToPull(
+                    path=server_note.path,
+                    reason="server_newer",
+                    server_modified=server_note.modified_at,
+                    client_modified=client_note.modified_at
+                ))
+            else:
+                # Même timestamp mais hash différent -> conflit
+                conflicts.append(NoteConflict(
+                    path=client_note.path,
+                    reason="both_modified",
+                    client_hash=client_note.content_hash,
+                    server_hash=server_note.content_hash,
+                    client_modified=client_note.modified_at,
+                    server_modified=server_note.modified_at
+                ))
+
+    # Notes sur le serveur que le client n'a pas
+    for path, server_note in server_notes_map.items():
+        if path not in client_notes_map:
+            if server_note.is_deleted:
+                # Ignorer les notes supprimées que le client ne connaît pas
+                pass
+            else:
+                # Note existe sur serveur mais pas client -> à puller
+                to_pull.append(NoteToPull(
+                    path=server_note.path,
+                    reason="not_on_client",
+                    server_modified=server_note.modified_at
+                ))
+
+    # Compter les notes serveur non supprimées
+    server_active_count = sum(1 for n in all_server_notes if not n.is_deleted)
+
+    summary = CompareSummary(
+        total_client=len(client_notes),
+        total_server=server_active_count,
+        to_push=len(to_push),
+        to_pull=len(to_pull),
+        conflicts=len(conflicts),
+        identical=identical_count,
+        deleted_on_server=len(deleted_on_server)
+    )
+
+    return CompareResponse(
+        server_time=server_time,
+        summary=summary,
+        to_push=to_push,
+        to_pull=to_pull,
+        conflicts=conflicts,
+        deleted_on_server=deleted_on_server
     )
