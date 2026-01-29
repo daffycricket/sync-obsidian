@@ -395,13 +395,19 @@ Les fichiers binaires (images, PDFs, ZIPs, etc.) sont synchronisés automatiquem
 - Les fichiers > 25 Mo sont ignorés (avec avertissement)
 - Les fichiers binaires ne sont pas fusionnés en cas de conflit (le plus récent gagne)
 
-### Types MIME détectés
+### Types MIME
 
-Images : PNG, JPEG, GIF, WebP, SVG, BMP, ICO
-Documents : PDF, DOC(X), XLS(X), PPT(X)
-Audio/Vidéo : MP3, WAV, MP4, WebM
-Archives : ZIP, RAR, 7z, TAR, GZ
-Autres : TXT, JSON, XML, CSV
+Le type MIME est **détecté automatiquement** basé sur l'extension du fichier (pas sur le contenu).
+Il est stocké comme métadonnée mais **n'est pas validé** côté serveur.
+
+**Extensions reconnues** :
+- Images : PNG, JPEG, GIF, WebP, SVG, BMP, ICO
+- Documents : PDF, DOC(X), XLS(X), PPT(X)
+- Audio/Vidéo : MP3, WAV, MP4, WebM
+- Archives : ZIP, RAR, 7z, TAR, GZ
+- Autres : TXT, JSON, XML, CSV
+
+> **Note** : La validation MIME (vérification du contenu réel) est prévue en amélioration future (voir TODO.md).
 
 ---
 
@@ -411,30 +417,45 @@ Autres : TXT, JSON, XML, CSV
 syncobsidian/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # Point d'entrée FastAPI
-│   │   ├── config.py            # Configuration
-│   │   ├── models.py            # Modèles SQLAlchemy
-│   │   ├── schemas.py           # Schémas Pydantic
-│   │   ├── auth.py              # Authentification JWT
-│   │   ├── sync.py              # Logique de synchronisation
-│   │   └── storage.py           # Gestion fichiers
+│   │   ├── main.py              # Point d'entrée FastAPI + endpoints
+│   │   ├── config.py            # Configuration (env vars)
+│   │   ├── database.py          # Connexion SQLite async
+│   │   ├── models.py            # Modèles SQLAlchemy (User, Note, Attachment)
+│   │   ├── schemas.py           # Schémas Pydantic (validation API)
+│   │   ├── auth.py              # Authentification JWT + bcrypt
+│   │   ├── sync.py              # Logique de synchronisation notes + attachments
+│   │   ├── storage.py           # Gestion fichiers (lecture/écriture)
+│   │   └── logging_config.py    # Configuration des logs
+│   ├── tests/                   # Tests pytest (138 tests)
+│   │   ├── conftest.py          # Fixtures pytest
+│   │   ├── test_auth.py         # Tests authentification
+│   │   ├── test_sync_*.py       # Tests synchronisation
+│   │   ├── test_attachments*.py # Tests pièces jointes
+│   │   └── ...
+│   ├── data/                    # Données persistantes (volume Docker)
+│   │   ├── syncobsidian.db      # Base SQLite
+│   │   └── storage/             # Fichiers par utilisateur
 │   ├── Dockerfile
-│   ├── docker-compose.yml       # Dev local
-│   ├── docker-compose.prod.yml  # Production HTTPS
+│   ├── docker-compose.yml       # Dev local (HTTP)
+│   ├── docker-compose.prod.yml  # Production (HTTPS + Caddy)
 │   ├── Caddyfile                # Config reverse proxy
 │   ├── logging.yaml             # Config logs avec timestamps
 │   └── requirements.txt
 │
-└── obsidian-plugin/
-    ├── src/
-    │   ├── main.ts              # Point d'entrée plugin
-    │   ├── types.ts             # Types TypeScript
-    │   ├── settings.ts          # Page de configuration
-    │   ├── api-client.ts        # Client API
-    │   └── sync-service.ts      # Service de sync
-    ├── manifest.json
-    ├── package.json
-    └── esbuild.config.mjs
+├── obsidian-plugin/
+│   ├── src/
+│   │   ├── main.ts              # Point d'entrée plugin Obsidian
+│   │   ├── types.ts             # Types TypeScript (API + settings)
+│   │   ├── settings.ts          # Page de configuration + rapport sync
+│   │   ├── api-client.ts        # Client HTTP pour l'API
+│   │   └── sync-service.ts      # Service de sync (notes + attachments)
+│   ├── manifest.json            # Métadonnées plugin (version 1.6.0)
+│   ├── package.json
+│   └── esbuild.config.mjs
+│
+├── README.md                    # Documentation principale
+├── TODO.md                      # Roadmap et améliorations futures
+└── SPEC-attachments-sync.md     # Spécification technique attachments
 ```
 
 ---
