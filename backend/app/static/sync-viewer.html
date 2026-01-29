@@ -90,15 +90,18 @@
             background: #4a4a6a;
         }
         th.sorted-asc::after {
-            content: ' ▲';
+            content: ' \25B2';
             font-size: 10px;
         }
         th.sorted-desc::after {
-            content: ' ▼';
+            content: ' \25BC';
             font-size: 10px;
         }
-        tr:hover {
+        tr.note-row:hover {
             background: #3a3a5a;
+        }
+        tr.note-row.has-attachments {
+            cursor: pointer;
         }
         .deleted {
             color: #ef4444;
@@ -150,6 +153,70 @@
             font-size: 13px;
             white-space: nowrap;
         }
+        /* Attachment styles */
+        .att-count {
+            text-align: center;
+        }
+        .att-badge {
+            display: inline-block;
+            background: #7c3aed;
+            color: white;
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            min-width: 24px;
+        }
+        .att-badge.empty {
+            background: #444;
+            color: #888;
+        }
+        .att-row {
+            background: #1f1f3a;
+        }
+        .att-row td {
+            padding: 8px 15px 8px 40px;
+            border-bottom: 1px solid #2a2a4a;
+        }
+        .att-list {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .att-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-size: 13px;
+        }
+        .att-icon {
+            width: 20px;
+            text-align: center;
+        }
+        .att-exists {
+            color: #22c55e;
+        }
+        .att-missing {
+            color: #ef4444;
+        }
+        .att-path {
+            color: #a5b4fc;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .att-size {
+            color: #888;
+            font-size: 12px;
+            margin-left: auto;
+        }
+        .expand-icon {
+            display: inline-block;
+            width: 16px;
+            transition: transform 0.2s;
+            color: #888;
+        }
+        .expand-icon.expanded {
+            transform: rotate(90deg);
+        }
     </style>
 </head>
 <body>
@@ -161,7 +228,7 @@
         <input type="text" id="pathFilter" placeholder="Filtrer par chemin (ex: folder/)">
         <label>
             <input type="checkbox" id="includeDeleted">
-            Afficher les supprimées
+            Afficher les supprimees
         </label>
     </div>
 
@@ -182,13 +249,14 @@
                 <th data-sort="synced_at">Synced</th>
                 <th data-sort="is_deleted">Deleted</th>
                 <th data-sort="size_bytes">Size</th>
+                <th>Attachments</th>
             </tr>
         </thead>
         <tbody id="notesBody"></tbody>
     </table>
 
     <div class="pagination" id="pagination" style="display: none;">
-        <button id="prevBtn" disabled>Précédent</button>
+        <button id="prevBtn" disabled>Precedent</button>
         <span class="page-info" id="paginationInfo">Page 1 / 1</span>
         <button id="nextBtn" disabled>Suivant</button>
     </div>
@@ -203,6 +271,7 @@
         let totalPages = 1;
         let currentSort = { field: 'path', order: 'asc' };
         let notesData = [];
+        let expandedNotes = new Set();
 
         // DOM elements
         const errorEl = document.getElementById('error');
@@ -249,7 +318,7 @@
 
         async function fetchNotes() {
             if (!token) {
-                showError('Token manquant. Ajoutez ?token=votre_jwt à l\'URL');
+                showError('Token manquant. Ajoutez ?token=votre_jwt a l\'URL');
                 return;
             }
 
@@ -278,7 +347,7 @@
 
                 if (!response.ok) {
                     if (response.status === 401) {
-                        throw new Error('Token invalide ou expiré');
+                        throw new Error('Token invalide ou expire');
                     }
                     throw new Error(`Erreur ${response.status}: ${response.statusText}`);
                 }
@@ -287,10 +356,18 @@
                 notesData = data.notes;
                 totalPages = data.total_pages;
 
+                // Count total referenced attachments
+                let totalRefAttachments = 0;
+                notesData.forEach(note => {
+                    if (note.referenced_attachments) {
+                        totalRefAttachments += note.referenced_attachments.length;
+                    }
+                });
+
                 // Update stats
                 document.getElementById('totalCount').textContent = data.total_count;
                 document.getElementById('pageInfo').textContent = `${data.page}/${data.total_pages}`;
-                document.getElementById('attachmentsCount').textContent = data.attachments.length;
+                document.getElementById('attachmentsCount').textContent = totalRefAttachments;
 
                 // Update pagination
                 document.getElementById('paginationInfo').textContent = `Page ${data.page} / ${data.total_pages}`;
@@ -347,17 +424,66 @@
             renderTable();
         }
 
+        function toggleAttachments(notePath) {
+            if (expandedNotes.has(notePath)) {
+                expandedNotes.delete(notePath);
+            } else {
+                expandedNotes.add(notePath);
+            }
+            renderTable();
+        }
+
         function renderTable() {
-            bodyEl.innerHTML = notesData.map(note => `
-                <tr class="${note.is_deleted ? 'deleted' : ''}">
-                    <td>${escapeHtml(note.path)}</td>
-                    <td class="hash" title="${escapeHtml(note.content_hash)}">${truncateHash(note.content_hash)}</td>
-                    <td class="datetime">${formatDate(note.modified_at)}</td>
-                    <td class="datetime">${formatDate(note.synced_at)}</td>
-                    <td>${note.is_deleted ? 'Oui' : 'Non'}</td>
-                    <td class="size">${formatSize(note.size_bytes)}</td>
-                </tr>
-            `).join('');
+            let html = '';
+
+            notesData.forEach((note, index) => {
+                const hasAttachments = note.referenced_attachments && note.referenced_attachments.length > 0;
+                const isExpanded = expandedNotes.has(note.path);
+                const attCount = hasAttachments ? note.referenced_attachments.length : 0;
+
+                // Main note row
+                html += `
+                    <tr class="note-row ${note.is_deleted ? 'deleted' : ''} ${hasAttachments ? 'has-attachments' : ''}"
+                        ${hasAttachments ? `onclick="toggleAttachments('${escapeHtml(note.path)}')"` : ''}>
+                        <td>
+                            ${hasAttachments ? `<span class="expand-icon ${isExpanded ? 'expanded' : ''}">&#9654;</span>` : '<span style="width:16px;display:inline-block"></span>'}
+                            ${escapeHtml(note.path)}
+                        </td>
+                        <td class="hash" title="${escapeHtml(note.content_hash)}">${truncateHash(note.content_hash)}</td>
+                        <td class="datetime">${formatDate(note.modified_at)}</td>
+                        <td class="datetime">${formatDate(note.synced_at)}</td>
+                        <td>${note.is_deleted ? 'Oui' : 'Non'}</td>
+                        <td class="size">${formatSize(note.size_bytes)}</td>
+                        <td class="att-count">
+                            <span class="att-badge ${attCount === 0 ? 'empty' : ''}">${attCount}</span>
+                        </td>
+                    </tr>
+                `;
+
+                // Attachment rows (if expanded)
+                if (hasAttachments && isExpanded) {
+                    html += `
+                        <tr class="att-row">
+                            <td colspan="7">
+                                <div class="att-list">
+                                    ${note.referenced_attachments.map(att => `
+                                        <div class="att-item">
+                                            <span class="att-icon ${att.exists ? 'att-exists' : 'att-missing'}">
+                                                ${att.exists ? '&#10003;' : '&#10007;'}
+                                            </span>
+                                            <span class="att-path">${escapeHtml(att.path)}</span>
+                                            ${att.exists && att.size_bytes ? `<span class="att-size">${formatSize(att.size_bytes)}</span>` : ''}
+                                            ${!att.exists ? '<span class="att-size" style="color:#ef4444">manquant</span>' : ''}
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </td>
+                        </tr>
+                    `;
+                }
+            });
+
+            bodyEl.innerHTML = html;
         }
 
         function escapeHtml(str) {

@@ -132,3 +132,44 @@ async def authenticated_client(client: AsyncClient) -> AsyncGenerator[tuple[Asyn
 def auth_headers(token: str) -> dict:
     """Génère les headers d'authentification."""
     return {"Authorization": f"Bearer {token}"}
+
+
+@pytest_asyncio.fixture
+async def db_session(setup_database) -> AsyncGenerator[AsyncSession, None]:
+    """Session de base de données pour les tests nécessitant un accès direct."""
+    async with test_async_session_maker() as session:
+        yield session
+
+
+@pytest_asyncio.fixture
+async def authenticated_client_with_db(client: AsyncClient, db_session: AsyncSession) -> AsyncGenerator[tuple[AsyncClient, str, AsyncSession, int], None]:
+    """Client HTTP avec un utilisateur authentifié et accès à la base de données.
+    Retourne (client, token, db_session, user_id).
+    """
+    # Créer un utilisateur
+    await client.post(
+        "/auth/register",
+        json={
+            "username": "testuser",
+            "email": "test@example.com",
+            "password": "testpassword123"
+        }
+    )
+
+    # Se connecter
+    response = await client.post(
+        "/auth/login",
+        json={
+            "username": "testuser",
+            "password": "testpassword123"
+        }
+    )
+    token = response.json()["access_token"]
+
+    # Récupérer l'ID utilisateur depuis la DB
+    from app.models import User
+    from sqlalchemy import select
+    result = await db_session.execute(select(User).where(User.username == "testuser"))
+    user = result.scalar_one()
+
+    yield client, token, db_session, user.id

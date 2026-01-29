@@ -301,6 +301,383 @@ class TestGetSyncedNotesEndpoint:
         assert paths == ["alpha.md", "middle.md", "zebra.md"]
 
 
+class TestReferencedAttachments:
+    """Tests des attachments référencés dans les notes."""
+
+    @pytest.mark.asyncio
+    async def test_note_with_no_attachments(self, authenticated_client):
+        """Note sans références d'attachments."""
+        client, token = authenticated_client
+
+        await client.post(
+            "/sync/push",
+            headers=auth_headers(token),
+            json={
+                "notes": [
+                    {
+                        "path": "simple.md",
+                        "content": "# Simple note\n\nNo attachments here.",
+                        "content_hash": "h1",
+                        "modified_at": "2026-01-11T10:00:00",
+                        "is_deleted": False
+                    }
+                ]
+            }
+        )
+
+        response = await client.get(
+            "/sync/notes",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        note = data["notes"][0]
+        assert note["referenced_attachments"] == []
+
+    @pytest.mark.asyncio
+    async def test_note_with_missing_attachments(self, authenticated_client):
+        """Note avec références d'attachments non existants sur le serveur."""
+        client, token = authenticated_client
+
+        content = """# Note avec images
+
+![[screenshot.png]]
+![[diagram.pdf]]
+![[video.mp4]]
+"""
+
+        await client.post(
+            "/sync/push",
+            headers=auth_headers(token),
+            json={
+                "notes": [
+                    {
+                        "path": "with-attachments.md",
+                        "content": content,
+                        "content_hash": "h1",
+                        "modified_at": "2026-01-11T10:00:00",
+                        "is_deleted": False
+                    }
+                ]
+            }
+        )
+
+        response = await client.get(
+            "/sync/notes",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        note = data["notes"][0]
+
+        # Vérifier les références
+        assert len(note["referenced_attachments"]) == 3
+
+        paths = [att["path"] for att in note["referenced_attachments"]]
+        assert "screenshot.png" in paths
+        assert "diagram.pdf" in paths
+        assert "video.mp4" in paths
+
+        # Tous devraient être marqués comme non existants
+        for att in note["referenced_attachments"]:
+            assert att["exists"] is False
+            assert att["size_bytes"] is None
+
+    @pytest.mark.asyncio
+    async def test_note_with_existing_attachments(self, authenticated_client_with_db):
+        """Note avec références d'attachments existants sur le serveur."""
+        client, token, db_session, user_id = authenticated_client_with_db
+        from app.models import Attachment
+        from datetime import datetime
+
+        # Créer des attachments dans la base de données
+        attachments_data = [
+            {"path": "images/photo.png", "content_hash": "hash1", "size": 1024, "mime_type": "image/png"},
+            {"path": "docs/manual.pdf", "content_hash": "hash2", "size": 2048, "mime_type": "application/pdf"},
+            {"path": "assets/logo.svg", "content_hash": "hash3", "size": 512, "mime_type": "image/svg+xml"},
+        ]
+
+        for att_data in attachments_data:
+            attachment = Attachment(
+                user_id=user_id,
+                path=att_data["path"],
+                content_hash=att_data["content_hash"],
+                size=att_data["size"],
+                mime_type=att_data["mime_type"],
+                modified_at=datetime.utcnow(),
+                is_deleted=False
+            )
+            db_session.add(attachment)
+        await db_session.commit()
+
+        # Créer une note qui référence ces attachments
+        content = """# Documentation
+
+![[images/photo.png]]
+![[docs/manual.pdf]]
+![[assets/logo.svg]]
+![[missing-file.jpg]]
+"""
+
+        await client.post(
+            "/sync/push",
+            headers=auth_headers(token),
+            json={
+                "notes": [
+                    {
+                        "path": "doc.md",
+                        "content": content,
+                        "content_hash": "dochash",
+                        "modified_at": "2026-01-11T10:00:00",
+                        "is_deleted": False
+                    }
+                ]
+            }
+        )
+
+        response = await client.get(
+            "/sync/notes",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        note = data["notes"][0]
+
+        assert len(note["referenced_attachments"]) == 4
+
+        # Vérifier les attachments existants
+        att_map = {att["path"]: att for att in note["referenced_attachments"]}
+
+        assert att_map["images/photo.png"]["exists"] is True
+        assert att_map["images/photo.png"]["size_bytes"] == 1024
+
+        assert att_map["docs/manual.pdf"]["exists"] is True
+        assert att_map["docs/manual.pdf"]["size_bytes"] == 2048
+
+        assert att_map["assets/logo.svg"]["exists"] is True
+        assert att_map["assets/logo.svg"]["size_bytes"] == 512
+
+        # L'attachment manquant
+        assert att_map["missing-file.jpg"]["exists"] is False
+        assert att_map["missing-file.jpg"]["size_bytes"] is None
+
+    @pytest.mark.asyncio
+    async def test_note_with_aliased_attachments(self, authenticated_client):
+        """Note avec références d'attachments avec alias (ex: ![[file|alias]])."""
+        client, token = authenticated_client
+
+        content = """# Note avec alias
+
+![[architecture-diagram.png|Diagramme d'architecture]]
+![[roadmap.pdf|Planning 2026]]
+"""
+
+        await client.post(
+            "/sync/push",
+            headers=auth_headers(token),
+            json={
+                "notes": [
+                    {
+                        "path": "aliased.md",
+                        "content": content,
+                        "content_hash": "h1",
+                        "modified_at": "2026-01-11T10:00:00",
+                        "is_deleted": False
+                    }
+                ]
+            }
+        )
+
+        response = await client.get(
+            "/sync/notes",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        note = data["notes"][0]
+
+        paths = [att["path"] for att in note["referenced_attachments"]]
+        assert "architecture-diagram.png" in paths
+        assert "roadmap.pdf" in paths
+        # L'alias ne doit pas être inclus dans le path
+        assert all("|" not in p for p in paths)
+
+    @pytest.mark.asyncio
+    async def test_note_ignores_markdown_links(self, authenticated_client):
+        """Les liens vers d'autres notes .md ne sont pas comptés comme attachments."""
+        client, token = authenticated_client
+
+        content = """# Note avec liens
+
+![[other-note.md]]
+[[reference.md|Voir aussi]]
+![[image.png]]
+"""
+
+        await client.post(
+            "/sync/push",
+            headers=auth_headers(token),
+            json={
+                "notes": [
+                    {
+                        "path": "links.md",
+                        "content": content,
+                        "content_hash": "h1",
+                        "modified_at": "2026-01-11T10:00:00",
+                        "is_deleted": False
+                    }
+                ]
+            }
+        )
+
+        response = await client.get(
+            "/sync/notes",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        note = data["notes"][0]
+
+        # Seul image.png doit être référencé, pas les .md
+        assert len(note["referenced_attachments"]) == 1
+        assert note["referenced_attachments"][0]["path"] == "image.png"
+
+    @pytest.mark.asyncio
+    async def test_note_deduplicates_attachments(self, authenticated_client):
+        """Les références en double sont dédupliquées."""
+        client, token = authenticated_client
+
+        content = """# Note avec doublons
+
+![[image.png]]
+Texte entre les deux.
+![[image.png]]
+Et encore: ![[image.png]]
+"""
+
+        await client.post(
+            "/sync/push",
+            headers=auth_headers(token),
+            json={
+                "notes": [
+                    {
+                        "path": "duplicates.md",
+                        "content": content,
+                        "content_hash": "h1",
+                        "modified_at": "2026-01-11T10:00:00",
+                        "is_deleted": False
+                    }
+                ]
+            }
+        )
+
+        response = await client.get(
+            "/sync/notes",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        note = data["notes"][0]
+
+        # Une seule référence malgré les doublons
+        assert len(note["referenced_attachments"]) == 1
+        assert note["referenced_attachments"][0]["path"] == "image.png"
+
+    @pytest.mark.asyncio
+    async def test_various_attachment_types(self, authenticated_client_with_db):
+        """Test avec différents types d'attachments (images, PDF, audio, vidéo)."""
+        client, token, db_session, user_id = authenticated_client_with_db
+        from app.models import Attachment
+        from datetime import datetime
+
+        # Créer des attachments de différents types
+        attachments_data = [
+            {"path": "image.png", "content_hash": "h1", "size": 1024, "mime_type": "image/png"},
+            {"path": "image.jpg", "content_hash": "h2", "size": 2048, "mime_type": "image/jpeg"},
+            {"path": "image.gif", "content_hash": "h3", "size": 512, "mime_type": "image/gif"},
+            {"path": "image.webp", "content_hash": "h4", "size": 768, "mime_type": "image/webp"},
+            {"path": "vector.svg", "content_hash": "h5", "size": 256, "mime_type": "image/svg+xml"},
+            {"path": "document.pdf", "content_hash": "h6", "size": 4096, "mime_type": "application/pdf"},
+            {"path": "audio.mp3", "content_hash": "h7", "size": 8192, "mime_type": "audio/mpeg"},
+            {"path": "video.mp4", "content_hash": "h8", "size": 16384, "mime_type": "video/mp4"},
+            {"path": "archive.zip", "content_hash": "h9", "size": 32768, "mime_type": "application/zip"},
+        ]
+
+        for att_data in attachments_data:
+            attachment = Attachment(
+                user_id=user_id,
+                path=att_data["path"],
+                content_hash=att_data["content_hash"],
+                size=att_data["size"],
+                mime_type=att_data["mime_type"],
+                modified_at=datetime.utcnow(),
+                is_deleted=False
+            )
+            db_session.add(attachment)
+        await db_session.commit()
+
+        # Créer une note qui référence tous ces attachments
+        content = """# Multi-media note
+
+## Images
+![[image.png]]
+![[image.jpg]]
+![[image.gif]]
+![[image.webp]]
+![[vector.svg]]
+
+## Documents
+![[document.pdf]]
+
+## Media
+![[audio.mp3]]
+![[video.mp4]]
+
+## Archives
+![[archive.zip]]
+"""
+
+        await client.post(
+            "/sync/push",
+            headers=auth_headers(token),
+            json={
+                "notes": [
+                    {
+                        "path": "multimedia.md",
+                        "content": content,
+                        "content_hash": "mmhash",
+                        "modified_at": "2026-01-11T10:00:00",
+                        "is_deleted": False
+                    }
+                ]
+            }
+        )
+
+        response = await client.get(
+            "/sync/notes",
+            headers=auth_headers(token)
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        note = data["notes"][0]
+
+        # Tous les attachments doivent être référencés
+        assert len(note["referenced_attachments"]) == 9
+
+        # Tous doivent exister avec leur taille
+        for att in note["referenced_attachments"]:
+            assert att["exists"] is True
+            assert att["size_bytes"] is not None
+            assert att["size_bytes"] > 0
+
+
 class TestSyncViewerPage:
     """Tests de la page sync-viewer."""
 

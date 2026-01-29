@@ -5,12 +5,38 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, and_
 
 from .models import Note, Attachment, User
+import re
 from .schemas import (
     NoteMetadata, NoteContent, AttachmentMetadata,
     SyncRequest, SyncResponse,
-    SyncedNoteInfo, SyncedAttachmentInfo, SyncedNotesResponse
+    SyncedNoteInfo, SyncedAttachmentInfo, SyncedNotesResponse,
+    ReferencedAttachment
 )
 from . import storage
+
+
+# Regex pour trouver les références Obsidian: ![[file]] ou [[file]]
+OBSIDIAN_LINK_PATTERN = re.compile(r'!?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]')
+
+
+def parse_attachment_references(content: str) -> List[str]:
+    """
+    Parse le contenu d'une note pour trouver les références aux attachments.
+    Cherche les patterns ![[filename]] et [[filename]] (liens Obsidian).
+    Retourne uniquement les fichiers non-markdown (images, PDFs, etc.)
+    """
+    if not content:
+        return []
+
+    matches = OBSIDIAN_LINK_PATTERN.findall(content)
+    attachments = []
+
+    for match in matches:
+        # Ignorer les liens vers d'autres notes markdown
+        if not match.lower().endswith('.md'):
+            attachments.append(match)
+
+    return list(set(attachments))  # Dédupliquer
 
 logger = logging.getLogger(__name__)
 
@@ -352,17 +378,44 @@ async def get_synced_notes(
     result = await db.execute(notes_query)
     notes_records = result.scalars().all()
 
-    # Construire la réponse avec les tailles de fichiers
+    # Récupérer tous les attachments de l'utilisateur pour vérifier l'existence
+    all_attachments_query = select(Attachment).where(Attachment.user_id == user_id)
+    if not include_deleted:
+        all_attachments_query = all_attachments_query.where(Attachment.is_deleted == False)
+    all_att_result = await db.execute(all_attachments_query)
+    all_attachments = {att.path: att for att in all_att_result.scalars().all()}
+
+    # Construire la réponse avec les tailles de fichiers et les attachments référencés
     notes_list = []
     for note in notes_records:
         size = storage.get_note_size(user_id, note.path) if not note.is_deleted else 0
+
+        # Parser le contenu pour trouver les références aux attachments
+        referenced_attachments = []
+        if not note.is_deleted:
+            try:
+                content = await storage.read_note(user_id, note.path)
+                if content:
+                    refs = parse_attachment_references(content)
+                    for ref_path in refs:
+                        # Vérifier si l'attachment existe
+                        att = all_attachments.get(ref_path)
+                        referenced_attachments.append(ReferencedAttachment(
+                            path=ref_path,
+                            exists=att is not None,
+                            size_bytes=att.size if att else None
+                        ))
+            except Exception as e:
+                logger.warning(f"Erreur parsing attachments pour {note.path}: {e}")
+
         notes_list.append(SyncedNoteInfo(
             path=note.path,
             content_hash=note.content_hash,
             modified_at=note.modified_at,
             synced_at=note.synced_at,
             is_deleted=note.is_deleted,
-            size_bytes=size
+            size_bytes=size,
+            referenced_attachments=referenced_attachments
         ))
 
     # Même logique pour les attachments (simplifié - pas de pagination séparée)

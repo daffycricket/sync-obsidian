@@ -93,6 +93,13 @@ class PullNotesResponse(BaseModel):
 
 
 # Schemas pour GET /sync/notes (visualisation des notes synchronisées)
+class ReferencedAttachment(BaseModel):
+    """Attachment référencé dans une note via ![[...]] ou [[...]]"""
+    path: str
+    exists: bool  # True si l'attachment existe sur le serveur
+    size_bytes: Optional[int] = None
+
+
 class SyncedNoteInfo(BaseModel):
     path: str
     content_hash: str
@@ -100,6 +107,7 @@ class SyncedNoteInfo(BaseModel):
     synced_at: datetime
     is_deleted: bool
     size_bytes: Optional[int] = None
+    referenced_attachments: List[ReferencedAttachment] = []
 
     class Config:
         from_attributes = True
