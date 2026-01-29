@@ -179,15 +179,16 @@ async def process_sync(
             # Ne pas envoyer les notes supprimées si le client ne les connaît pas
             # (évite de propager des suppressions de notes jamais vues)
             if not server_note.is_deleted:
-                # Si last_sync est None, c'est un nouveau device -> envoyer toutes les notes
-                # Sinon, envoyer seulement celles modifiées depuis last_sync
-                if request.last_sync is None or path in server_notes_changed_paths:
-                    notes_to_pull.append(NoteMetadata(
-                        path=server_note.path,
-                        content_hash=server_note.content_hash,
-                        modified_at=server_note.modified_at,
-                        is_deleted=server_note.is_deleted
-                    ))
+                # Le client n'a JAMAIS eu cette note -> TOUJOURS la proposer
+                # Correction: on ne filtre plus par last_sync ici car le client
+                # ne connaît pas cette note, il doit la recevoir indépendamment
+                # de quand elle a été créée/modifiée sur le serveur
+                notes_to_pull.append(NoteMetadata(
+                    path=server_note.path,
+                    content_hash=server_note.content_hash,
+                    modified_at=server_note.modified_at,
+                    is_deleted=server_note.is_deleted
+                ))
     
     # Même logique pour les pièces jointes
     attachments_to_pull: List[AttachmentMetadata] = []
