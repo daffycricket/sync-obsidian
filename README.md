@@ -1,6 +1,6 @@
 # SyncObsidian - Synchronisation Auto-Hébergée pour Obsidian
 
-Service de synchronisation Obsidian self-hosted permettant de synchroniser vos notes sur tous vos appareils (desktop, iOS, Android).
+Service de synchronisation Obsidian self-hosted permettant de synchroniser vos notes et pièces jointes sur tous vos appareils (desktop, iOS, Android).
 
 ## Architecture
 
@@ -309,17 +309,24 @@ Remplacer `ovh` par votre provider si différent.
 | `/sync` | POST | Endpoint principal de sync |
 | `/sync/push` | POST | Envoyer des notes |
 | `/sync/pull` | POST | Récupérer des notes |
+| `/sync/attachments/push` | POST | Envoyer des pièces jointes |
+| `/sync/attachments/pull` | POST | Récupérer des pièces jointes |
+| `/sync/notes` | GET | Lister les notes synchronisées |
+| `/sync/compare` | POST | Comparer client/serveur |
 
 ---
 
 ## Fonctionnalités
 
 - ✅ Synchronisation bidirectionnelle des notes Markdown
+- ✅ Synchronisation des pièces jointes (images, PDFs, etc. - max 25 Mo)
 - ✅ Authentification sécurisée (JWT + bcrypt)
 - ✅ Détection et gestion des conflits
+- ✅ Propagation des suppressions entre appareils
 - ✅ Synchronisation automatique (configurable)
 - ✅ Synchronisation manuelle via commande/bouton
 - ✅ Indicateur de statut dans la barre latérale
+- ✅ Rapport de synchronisation détaillé
 - ✅ Compatible desktop, iOS et Android
 - ✅ Docker-ready pour déploiement facile
 - ✅ HTTPS automatique avec Let's Encrypt
@@ -338,10 +345,10 @@ Quand une note est modifiée sur plusieurs appareils simultanément :
 
 ## Synchronisation des Suppressions
 
-Quand une note est supprimée sur un appareil :
+Quand une note ou pièce jointe est supprimée sur un appareil :
 
-1. Le plugin mémorise la liste des fichiers connus après chaque sync (`knownFiles`)
-2. Au prochain sync, il compare les fichiers actuels avec `knownFiles`
+1. Le plugin mémorise la liste des fichiers connus après chaque sync (`knownFiles`, `knownAttachments`)
+2. Au prochain sync, il compare les fichiers actuels avec ces listes
 3. Les fichiers disparus sont envoyés au serveur avec `is_deleted: true`
 4. Le serveur propage la suppression aux autres appareils
 5. Les autres appareils suppriment le fichier local lors du pull
@@ -360,6 +367,41 @@ Quand une note est supprimée sur un appareil :
 Si Device A supprime une note pendant que Device B la modifie :
 - Si la modification est **plus récente** que la suppression → la note est recréée
 - Si la suppression est **plus récente** → la note est supprimée sur Device B
+
+---
+
+## Synchronisation des Pièces Jointes
+
+Les fichiers binaires (images, PDFs, ZIPs, etc.) sont synchronisés automatiquement avec les notes.
+
+### Caractéristiques
+
+| Élément | Valeur |
+|---------|--------|
+| Taille max par fichier | 25 Mo |
+| Transport | Base64 en JSON |
+| Stockage | Filesystem (comme les notes) |
+| Types supportés | Tous (images, PDFs, documents, archives...) |
+
+### Fonctionnement
+
+1. **Collecte** : Le plugin détecte tous les fichiers non-.md du vault
+2. **Comparaison** : Hash SHA256 pour détecter les modifications
+3. **Transfert** : Seuls les fichiers modifiés sont envoyés/reçus
+4. **Suppressions** : Propagées entre devices (comme les notes)
+
+### Limites
+
+- Les fichiers > 25 Mo sont ignorés (avec avertissement)
+- Les fichiers binaires ne sont pas fusionnés en cas de conflit (le plus récent gagne)
+
+### Types MIME détectés
+
+Images : PNG, JPEG, GIF, WebP, SVG, BMP, ICO
+Documents : PDF, DOC(X), XLS(X), PPT(X)
+Audio/Vidéo : MP3, WAV, MP4, WebM
+Archives : ZIP, RAR, 7z, TAR, GZ
+Autres : TXT, JSON, XML, CSV
 
 ---
 
