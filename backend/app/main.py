@@ -18,6 +18,8 @@ from .schemas import (
     SyncRequest, SyncResponse,
     PushNotesRequest, PushNotesResponse,
     PullNotesRequest, PullNotesResponse,
+    PushAttachmentsRequest, PushAttachmentsResponse,
+    PullAttachmentsRequest, PullAttachmentsResponse,
     SyncedNotesResponse,
     CompareRequest, CompareResponse
 )
@@ -25,7 +27,10 @@ from .auth import (
     get_password_hash, authenticate_user,
     create_access_token, get_current_user
 )
-from .sync import process_sync, push_notes, pull_notes, get_synced_notes, compare_notes
+from .sync import (
+    process_sync, push_notes, pull_notes, get_synced_notes, compare_notes,
+    push_attachments, pull_attachments
+)
 
 
 @asynccontextmanager
@@ -209,6 +214,33 @@ async def sync_compare(
     Retourne les différences catégorisées : à pusher, à puller, conflits, supprimées.
     """
     return await compare_notes(db, current_user, request.notes)
+
+
+@app.post("/sync/attachments/push", response_model=PushAttachmentsResponse)
+async def sync_attachments_push(
+    request: PushAttachmentsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Reçoit les pièces jointes à pousser vers le serveur.
+    Les fichiers sont encodés en base64. Limite : 25 Mo par fichier.
+    """
+    success, failed = await push_attachments(db, current_user, request.attachments)
+    return PushAttachmentsResponse(success=success, failed=failed)
+
+
+@app.post("/sync/attachments/pull", response_model=PullAttachmentsResponse)
+async def sync_attachments_pull(
+    request: PullAttachmentsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Retourne les pièces jointes demandées (encodées en base64).
+    """
+    attachments = await pull_attachments(db, current_user, request.paths)
+    return PullAttachmentsResponse(attachments=attachments)
 
 
 if __name__ == "__main__":

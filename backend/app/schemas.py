@@ -60,6 +60,17 @@ class AttachmentMetadata(BaseModel):
     is_deleted: bool = False
 
 
+class AttachmentContent(BaseModel):
+    """Contenu complet d'un attachment pour push/pull."""
+    path: str
+    content_base64: str  # Contenu encodé en base64
+    content_hash: str
+    size: int
+    mime_type: Optional[str] = None
+    modified_at: datetime
+    is_deleted: bool = False
+
+
 class SyncRequest(BaseModel):
     last_sync: Optional[datetime] = None
     notes: List[NoteMetadata] = []
@@ -90,6 +101,23 @@ class PullNotesRequest(BaseModel):
 
 class PullNotesResponse(BaseModel):
     notes: List[NoteContent]
+
+
+class PushAttachmentsRequest(BaseModel):
+    attachments: List[AttachmentContent]
+
+
+class PushAttachmentsResponse(BaseModel):
+    success: List[str] = []
+    failed: List[str] = []
+
+
+class PullAttachmentsRequest(BaseModel):
+    paths: List[str]
+
+
+class PullAttachmentsResponse(BaseModel):
+    attachments: List[AttachmentContent]
 
 
 # Schemas pour GET /sync/notes (visualisation des notes synchronisées)

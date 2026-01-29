@@ -7,6 +7,10 @@ import {
     PushNotesResponse,
     PullNotesRequest,
     PullNotesResponse,
+    PushAttachmentsRequest,
+    PushAttachmentsResponse,
+    PullAttachmentsRequest,
+    PullAttachmentsResponse,
     SyncedNotesResponse,
     SyncedNotesParams,
     CompareRequest,
@@ -105,6 +109,15 @@ export class ApiClient {
 
     async pullNotes(request: PullNotesRequest): Promise<PullNotesResponse> {
         return this.request<PullNotesResponse>("/sync/pull", "POST", request);
+    }
+
+    // Attachments endpoints
+    async pushAttachments(request: PushAttachmentsRequest): Promise<PushAttachmentsResponse> {
+        return this.request<PushAttachmentsResponse>("/sync/attachments/push", "POST", request);
+    }
+
+    async pullAttachments(request: PullAttachmentsRequest): Promise<PullAttachmentsResponse> {
+        return this.request<PullAttachmentsResponse>("/sync/attachments/pull", "POST", request);
     }
 
     // GET /sync/notes - Visualisation des notes synchronisées

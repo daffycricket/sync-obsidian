@@ -54,8 +54,9 @@ export interface SyncObsidianSettings {
     autoSyncInterval: number; // en minutes, 0 = désactivé
     lastSync: string | null; // ISO timestamp
     showStatusBar: boolean;
-    knownFiles: string[]; // Liste des fichiers connus après le dernier sync réussi
-    
+    knownFiles: string[]; // Liste des fichiers .md connus après le dernier sync réussi
+    knownAttachments: string[]; // Liste des attachments connus après le dernier sync réussi
+
     // Rapport de synchronisation
     reportMode: "last" | "history";
     reportHistoryHours: number;
@@ -72,7 +73,8 @@ export const DEFAULT_SETTINGS: SyncObsidianSettings = {
     lastSync: null,
     showStatusBar: true,
     knownFiles: [],
-    
+    knownAttachments: [],
+
     // Rapport de synchronisation - défauts
     reportMode: "history",
     reportHistoryHours: 24,
@@ -101,10 +103,33 @@ export interface NoteContent {
     is_deleted: boolean;
 }
 
+// ============================================
+// Attachments
+// ============================================
+
+export interface AttachmentMetadata {
+    path: string;
+    content_hash: string;
+    size: number;
+    mime_type?: string | null;
+    modified_at: string;
+    is_deleted: boolean;
+}
+
+export interface AttachmentContent {
+    path: string;
+    content_base64: string;
+    content_hash: string;
+    size: number;
+    mime_type?: string | null;
+    modified_at: string;
+    is_deleted: boolean;
+}
+
 export interface SyncRequest {
     last_sync: string | null;
     notes: NoteMetadata[];
-    attachments: any[];
+    attachments: AttachmentMetadata[];
 }
 
 export interface SyncResponse {
@@ -112,7 +137,7 @@ export interface SyncResponse {
     notes_to_pull: NoteMetadata[];
     notes_to_push: string[];
     conflicts: NoteMetadata[];
-    attachments_to_pull: any[];
+    attachments_to_pull: AttachmentMetadata[];
     attachments_to_push: string[];
 }
 
@@ -131,6 +156,23 @@ export interface PullNotesRequest {
 
 export interface PullNotesResponse {
     notes: NoteContent[];
+}
+
+export interface PushAttachmentsRequest {
+    attachments: AttachmentContent[];
+}
+
+export interface PushAttachmentsResponse {
+    success: string[];
+    failed: string[];
+}
+
+export interface PullAttachmentsRequest {
+    paths: string[];
+}
+
+export interface PullAttachmentsResponse {
+    attachments: AttachmentContent[];
 }
 
 export type SyncStatus = "idle" | "syncing" | "success" | "error";

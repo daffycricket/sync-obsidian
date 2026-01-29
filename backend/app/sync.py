@@ -7,18 +7,22 @@ from sqlalchemy import select, and_
 from .models import Note, Attachment, User
 import re
 from .schemas import (
-    NoteMetadata, NoteContent, AttachmentMetadata,
+    NoteMetadata, NoteContent, AttachmentMetadata, AttachmentContent,
     SyncRequest, SyncResponse,
     SyncedNoteInfo, SyncedAttachmentInfo, SyncedNotesResponse,
     ReferencedAttachment,
     ClientNoteInfo, CompareRequest, CompareResponse,
     CompareSummary, NoteToPush, NoteToPull, NoteConflict, NoteDeletedOnServer
 )
+import base64
 from . import storage
 
 
 # Regex pour trouver les références Obsidian: ![[file]] ou [[file]]
 OBSIDIAN_LINK_PATTERN = re.compile(r'!?\[\[([^\]|]+)(?:\|[^\]]+)?\]\]')
+
+# Limite de taille pour les attachments (25 Mo)
+MAX_ATTACHMENT_SIZE = 25 * 1024 * 1024
 
 
 def parse_attachment_references(content: str) -> List[str]:
@@ -74,6 +78,25 @@ async def get_note_by_path(db: AsyncSession, user_id: int, path: str) -> Note:
     result = await db.execute(
         select(Note).where(
             and_(Note.user_id == user_id, Note.path == path)
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def get_server_attachments(db: AsyncSession, user_id: int) -> List[Attachment]:
+    """Récupère tous les attachments non supprimés d'un utilisateur."""
+    query = select(Attachment).where(
+        and_(Attachment.user_id == user_id, Attachment.is_deleted == False)
+    )
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+async def get_attachment_by_path(db: AsyncSession, user_id: int, path: str) -> Attachment:
+    """Récupère un attachment par son chemin."""
+    result = await db.execute(
+        select(Attachment).where(
+            and_(Attachment.user_id == user_id, Attachment.path == path)
         )
     )
     return result.scalar_one_or_none()
@@ -190,12 +213,50 @@ async def process_sync(
                     is_deleted=server_note.is_deleted
                 ))
     
-    # Même logique pour les pièces jointes
+    # Logique pour les pièces jointes
     attachments_to_pull: List[AttachmentMetadata] = []
     attachments_to_push: List[str] = []
-    
-    # TODO: Implémenter la logique pour les pièces jointes (similaire aux notes)
-    
+
+    # Récupérer tous les attachments du serveur
+    all_server_attachments = await get_server_attachments(db, user.id)
+    server_attachments_map = {a.path: a for a in all_server_attachments}
+
+    # Map des attachments client
+    client_attachments_map = {a.path: a for a in request.attachments}
+
+    # Analyser chaque attachment du client
+    for client_att in request.attachments:
+        server_att = server_attachments_map.get(client_att.path)
+
+        if server_att is None:
+            # Attachment n'existe pas sur le serveur -> le serveur veut le recevoir
+            attachments_to_push.append(client_att.path)
+        elif server_att.content_hash != client_att.content_hash:
+            # Hash différent - comme les attachments sont immutables,
+            # c'est un conflit. On garde la version serveur (client doit pull)
+            attachments_to_pull.append(AttachmentMetadata(
+                path=server_att.path,
+                content_hash=server_att.content_hash,
+                size=server_att.size,
+                mime_type=server_att.mime_type,
+                modified_at=server_att.modified_at,
+                is_deleted=server_att.is_deleted
+            ))
+        # Si même hash, rien à faire
+
+    # Attachments sur le serveur que le client n'a pas
+    for path, server_att in server_attachments_map.items():
+        if path not in client_attachments_map:
+            # Le client n'a pas cet attachment -> toujours le proposer
+            attachments_to_pull.append(AttachmentMetadata(
+                path=server_att.path,
+                content_hash=server_att.content_hash,
+                size=server_att.size,
+                mime_type=server_att.mime_type,
+                modified_at=server_att.modified_at,
+                is_deleted=server_att.is_deleted
+            ))
+
     return SyncResponse(
         server_time=server_time,
         notes_to_pull=notes_to_pull,
@@ -566,3 +627,148 @@ async def compare_notes(
         conflicts=conflicts,
         deleted_on_server=deleted_on_server
     )
+
+
+async def push_attachments(
+    db: AsyncSession,
+    user: User,
+    attachments: List[AttachmentContent]
+) -> Tuple[List[str], List[str]]:
+    """
+    Reçoit les attachments du client et les sauvegarde.
+    Vérifie la taille max (25 Mo).
+    Gère également les suppressions (is_deleted=True).
+    Retourne les listes des succès et échecs.
+    """
+    success = []
+    failed = []
+    user_id = user.id
+
+    for att in attachments:
+        try:
+            # Vérifier la taille
+            if att.size > MAX_ATTACHMENT_SIZE:
+                logger.warning(
+                    f"Attachment trop volumineux - user_id={user_id}, path={att.path}, size={att.size}"
+                )
+                failed.append(att.path)
+                continue
+
+            existing = await get_attachment_by_path(db, user_id, att.path)
+
+            if att.is_deleted:
+                # Suppression : supprimer le fichier physique et marquer en base
+                await storage.delete_attachment(user_id, att.path)
+
+                if existing:
+                    existing.is_deleted = True
+                    existing.modified_at = att.modified_at
+                    existing.synced_at = datetime.utcnow()
+                    existing.content_hash = ""
+                    existing.size = 0
+                else:
+                    # Créer une entrée pour tracer la suppression
+                    new_att = Attachment(
+                        user_id=user_id,
+                        path=att.path,
+                        content_hash="",
+                        size=0,
+                        mime_type=None,
+                        modified_at=att.modified_at,
+                        synced_at=datetime.utcnow(),
+                        is_deleted=True
+                    )
+                    db.add(new_att)
+            else:
+                # Création/modification normale
+                content_bytes = base64.b64decode(att.content_base64)
+                computed_hash = await storage.save_attachment(user_id, att.path, content_bytes)
+
+                if existing:
+                    existing.content_hash = computed_hash
+                    existing.size = len(content_bytes)
+                    existing.mime_type = att.mime_type
+                    existing.modified_at = att.modified_at
+                    existing.synced_at = datetime.utcnow()
+                    existing.is_deleted = False
+                else:
+                    new_att = Attachment(
+                        user_id=user_id,
+                        path=att.path,
+                        content_hash=computed_hash,
+                        size=len(content_bytes),
+                        mime_type=att.mime_type,
+                        modified_at=att.modified_at,
+                        synced_at=datetime.utcnow(),
+                        is_deleted=False
+                    )
+                    db.add(new_att)
+
+            await db.commit()
+            success.append(att.path)
+
+        except ValueError as e:
+            # Erreur de validation de chemin (path traversal, etc.)
+            logger.warning(
+                f"Chemin invalide rejeté - user_id={user_id}, path={att.path}, error={str(e)}"
+            )
+            failed.append(att.path)
+            await db.rollback()
+        except Exception as e:
+            logger.error(
+                f"Erreur lors de la sauvegarde de l'attachment - user_id={user_id}, path={att.path}, error={str(e)}",
+                exc_info=True
+            )
+            failed.append(att.path)
+            await db.rollback()
+
+    return success, failed
+
+
+async def pull_attachments(
+    db: AsyncSession,
+    user: User,
+    paths: List[str]
+) -> List[AttachmentContent]:
+    """
+    Retourne le contenu des attachments demandés (encodé en base64).
+    Pour les attachments supprimés, retourne is_deleted=True avec contenu vide.
+    """
+    attachments = []
+    user_id = user.id
+
+    for path in paths:
+        try:
+            att_record = await get_attachment_by_path(db, user_id, path)
+            if att_record:
+                if att_record.is_deleted:
+                    # Attachment supprimé : renvoyer les métadonnées avec contenu vide
+                    attachments.append(AttachmentContent(
+                        path=path,
+                        content_base64="",
+                        content_hash="",
+                        size=0,
+                        mime_type=None,
+                        modified_at=att_record.modified_at,
+                        is_deleted=True
+                    ))
+                else:
+                    content = await storage.read_attachment(user_id, path)
+                    if content is not None:
+                        attachments.append(AttachmentContent(
+                            path=path,
+                            content_base64=base64.b64encode(content).decode("utf-8"),
+                            content_hash=att_record.content_hash,
+                            size=att_record.size,
+                            mime_type=att_record.mime_type,
+                            modified_at=att_record.modified_at,
+                            is_deleted=False
+                        ))
+        except ValueError as e:
+            # Erreur de validation de chemin (path traversal, etc.)
+            logger.warning(
+                f"Chemin invalide rejeté lors du pull - user_id={user_id}, path={path}, error={str(e)}"
+            )
+            # Ne pas ajouter l'attachment à la liste
+
+    return attachments
