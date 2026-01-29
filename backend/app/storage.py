@@ -135,8 +135,30 @@ async def read_attachment(user_id: int, path: str) -> Optional[bytes]:
 async def delete_attachment(user_id: int, path: str) -> bool:
     """Supprime une pièce jointe."""
     attachment_path = get_attachment_path(user_id, path)
-    
+
     if attachment_path.exists():
         os.remove(attachment_path)
         return True
     return False
+
+
+def get_note_size(user_id: int, path: str) -> Optional[int]:
+    """Retourne la taille d'une note en octets, ou None si elle n'existe pas."""
+    try:
+        note_path = get_note_path(user_id, path)
+        if note_path.exists():
+            return note_path.stat().st_size
+    except (ValueError, OSError):
+        pass
+    return None
+
+
+def get_attachment_size(user_id: int, path: str) -> Optional[int]:
+    """Retourne la taille d'une pièce jointe en octets, ou None si elle n'existe pas."""
+    try:
+        attachment_path = get_attachment_path(user_id, path)
+        if attachment_path.exists():
+            return attachment_path.stat().st_size
+    except (ValueError, OSError):
+        pass
+    return None

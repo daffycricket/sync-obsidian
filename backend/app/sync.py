@@ -7,7 +7,8 @@ from sqlalchemy import select, and_
 from .models import Note, Attachment, User
 from .schemas import (
     NoteMetadata, NoteContent, AttachmentMetadata,
-    SyncRequest, SyncResponse
+    SyncRequest, SyncResponse,
+    SyncedNoteInfo, SyncedAttachmentInfo, SyncedNotesResponse
 )
 from . import storage
 
@@ -296,5 +297,103 @@ async def pull_notes(
                 f"Chemin invalide rejeté lors du pull - user_id={user_id}, path={path}, error={str(e)}"
             )
             # Ne pas ajouter la note à la liste (comme si elle n'existait pas)
-    
+
     return notes
+
+
+async def get_synced_notes(
+    db: AsyncSession,
+    user: User,
+    page: int = 1,
+    page_size: int = 50,
+    include_deleted: bool = False,
+    path_filter: str = None,
+    modified_after: datetime = None,
+    modified_before: datetime = None
+) -> SyncedNotesResponse:
+    """
+    Récupère la liste des notes synchronisées pour un utilisateur avec pagination.
+    Utilisé pour le debug et la visualisation.
+    """
+    from sqlalchemy import func
+
+    user_id = user.id
+
+    # Construction de la requête de base pour les notes
+    notes_query = select(Note).where(Note.user_id == user_id)
+    count_query = select(func.count(Note.id)).where(Note.user_id == user_id)
+
+    # Filtres
+    if not include_deleted:
+        notes_query = notes_query.where(Note.is_deleted == False)
+        count_query = count_query.where(Note.is_deleted == False)
+
+    if path_filter:
+        notes_query = notes_query.where(Note.path.like(f"{path_filter}%"))
+        count_query = count_query.where(Note.path.like(f"{path_filter}%"))
+
+    if modified_after:
+        notes_query = notes_query.where(Note.modified_at > modified_after)
+        count_query = count_query.where(Note.modified_at > modified_after)
+
+    if modified_before:
+        notes_query = notes_query.where(Note.modified_at < modified_before)
+        count_query = count_query.where(Note.modified_at < modified_before)
+
+    # Compter le total
+    total_result = await db.execute(count_query)
+    total_count = total_result.scalar()
+
+    # Pagination
+    offset = (page - 1) * page_size
+    notes_query = notes_query.order_by(Note.path).offset(offset).limit(page_size)
+
+    # Exécuter la requête
+    result = await db.execute(notes_query)
+    notes_records = result.scalars().all()
+
+    # Construire la réponse avec les tailles de fichiers
+    notes_list = []
+    for note in notes_records:
+        size = storage.get_note_size(user_id, note.path) if not note.is_deleted else 0
+        notes_list.append(SyncedNoteInfo(
+            path=note.path,
+            content_hash=note.content_hash,
+            modified_at=note.modified_at,
+            synced_at=note.synced_at,
+            is_deleted=note.is_deleted,
+            size_bytes=size
+        ))
+
+    # Même logique pour les attachments (simplifié - pas de pagination séparée)
+    attachments_query = select(Attachment).where(Attachment.user_id == user_id)
+    if not include_deleted:
+        attachments_query = attachments_query.where(Attachment.is_deleted == False)
+    attachments_query = attachments_query.limit(100)  # Limite pour éviter surcharge
+
+    att_result = await db.execute(attachments_query)
+    attachments_records = att_result.scalars().all()
+
+    attachments_list = []
+    for att in attachments_records:
+        attachments_list.append(SyncedAttachmentInfo(
+            path=att.path,
+            content_hash=att.content_hash,
+            modified_at=att.modified_at,
+            synced_at=att.synced_at,
+            is_deleted=att.is_deleted,
+            size_bytes=att.size,
+            mime_type=att.mime_type
+        ))
+
+    # Calculer le nombre total de pages
+    total_pages = (total_count + page_size - 1) // page_size if total_count > 0 else 1
+
+    return SyncedNotesResponse(
+        total_count=total_count,
+        page=page,
+        page_size=page_size,
+        total_pages=total_pages,
+        notes=notes_list,
+        attachments=attachments_list
+    )

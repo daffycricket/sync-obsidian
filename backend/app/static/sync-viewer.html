@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SyncObsidian - Notes Viewer</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        h1 {
+            margin-bottom: 20px;
+            color: #7c3aed;
+        }
+        .error {
+            background: #dc2626;
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        .filters {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        .filters input[type="text"] {
+            padding: 8px 12px;
+            border: 1px solid #444;
+            border-radius: 6px;
+            background: #2a2a4a;
+            color: #eee;
+            width: 250px;
+        }
+        .filters label {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .filters input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+        .stats {
+            background: #2a2a4a;
+            padding: 12px 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 30px;
+        }
+        .stats span {
+            color: #888;
+        }
+        .stats strong {
+            color: #7c3aed;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: #2a2a4a;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #3a3a5a;
+        }
+        th {
+            background: #3a3a5a;
+            cursor: pointer;
+            user-select: none;
+            white-space: nowrap;
+        }
+        th:hover {
+            background: #4a4a6a;
+        }
+        th.sorted-asc::after {
+            content: ' ▲';
+            font-size: 10px;
+        }
+        th.sorted-desc::after {
+            content: ' ▼';
+            font-size: 10px;
+        }
+        tr:hover {
+            background: #3a3a5a;
+        }
+        .deleted {
+            color: #ef4444;
+            text-decoration: line-through;
+            opacity: 0.7;
+        }
+        .hash {
+            font-family: monospace;
+            font-size: 12px;
+            color: #888;
+        }
+        .pagination {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+            align-items: center;
+            justify-content: center;
+        }
+        button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 6px;
+            background: #7c3aed;
+            color: white;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        button:hover:not(:disabled) {
+            background: #6d28d9;
+        }
+        button:disabled {
+            background: #444;
+            cursor: not-allowed;
+        }
+        .page-info {
+            color: #888;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #888;
+        }
+        .size {
+            text-align: right;
+            font-family: monospace;
+            font-size: 13px;
+        }
+        .datetime {
+            font-size: 13px;
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>SyncObsidian - Notes Viewer</h1>
+
+    <div id="error" class="error" style="display: none;"></div>
+
+    <div class="filters">
+        <input type="text" id="pathFilter" placeholder="Filtrer par chemin (ex: folder/)">
+        <label>
+            <input type="checkbox" id="includeDeleted">
+            Afficher les supprimées
+        </label>
+    </div>
+
+    <div class="stats" id="stats" style="display: none;">
+        <div><span>Total notes:</span> <strong id="totalCount">0</strong></div>
+        <div><span>Page:</span> <strong id="pageInfo">1/1</strong></div>
+        <div><span>Attachments:</span> <strong id="attachmentsCount">0</strong></div>
+    </div>
+
+    <div id="loading" class="loading">Chargement...</div>
+
+    <table id="notesTable" style="display: none;">
+        <thead>
+            <tr>
+                <th data-sort="path">Path</th>
+                <th data-sort="content_hash">Hash</th>
+                <th data-sort="modified_at">Modified</th>
+                <th data-sort="synced_at">Synced</th>
+                <th data-sort="is_deleted">Deleted</th>
+                <th data-sort="size_bytes">Size</th>
+            </tr>
+        </thead>
+        <tbody id="notesBody"></tbody>
+    </table>
+
+    <div class="pagination" id="pagination" style="display: none;">
+        <button id="prevBtn" disabled>Précédent</button>
+        <span class="page-info" id="paginationInfo">Page 1 / 1</span>
+        <button id="nextBtn" disabled>Suivant</button>
+    </div>
+
+    <script>
+        // Get token from URL
+        const urlParams = new URLSearchParams(window.location.search);
+        const token = urlParams.get('token');
+
+        // State
+        let currentPage = 1;
+        let totalPages = 1;
+        let currentSort = { field: 'path', order: 'asc' };
+        let notesData = [];
+
+        // DOM elements
+        const errorEl = document.getElementById('error');
+        const loadingEl = document.getElementById('loading');
+        const statsEl = document.getElementById('stats');
+        const tableEl = document.getElementById('notesTable');
+        const bodyEl = document.getElementById('notesBody');
+        const paginationEl = document.getElementById('pagination');
+        const pathFilterEl = document.getElementById('pathFilter');
+        const includeDeletedEl = document.getElementById('includeDeleted');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+
+        function showError(message) {
+            errorEl.textContent = message;
+            errorEl.style.display = 'block';
+            loadingEl.style.display = 'none';
+        }
+
+        function formatDate(dateStr) {
+            if (!dateStr) return '-';
+            const d = new Date(dateStr);
+            return d.toLocaleString('fr-FR', {
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        }
+
+        function formatSize(bytes) {
+            if (bytes === null || bytes === undefined) return '-';
+            if (bytes === 0) return '0 B';
+            const units = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(1024));
+            return (bytes / Math.pow(1024, i)).toFixed(i > 0 ? 1 : 0) + ' ' + units[i];
+        }
+
+        function truncateHash(hash) {
+            if (!hash) return '-';
+            return hash.substring(0, 8) + '...';
+        }
+
+        async function fetchNotes() {
+            if (!token) {
+                showError('Token manquant. Ajoutez ?token=votre_jwt à l\'URL');
+                return;
+            }
+
+            loadingEl.style.display = 'block';
+            tableEl.style.display = 'none';
+            statsEl.style.display = 'none';
+            paginationEl.style.display = 'none';
+            errorEl.style.display = 'none';
+
+            const params = new URLSearchParams({
+                page: currentPage,
+                page_size: 50,
+                include_deleted: includeDeletedEl.checked
+            });
+
+            if (pathFilterEl.value.trim()) {
+                params.append('path_filter', pathFilterEl.value.trim());
+            }
+
+            try {
+                const response = await fetch(`/sync/notes?${params}`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    if (response.status === 401) {
+                        throw new Error('Token invalide ou expiré');
+                    }
+                    throw new Error(`Erreur ${response.status}: ${response.statusText}`);
+                }
+
+                const data = await response.json();
+                notesData = data.notes;
+                totalPages = data.total_pages;
+
+                // Update stats
+                document.getElementById('totalCount').textContent = data.total_count;
+                document.getElementById('pageInfo').textContent = `${data.page}/${data.total_pages}`;
+                document.getElementById('attachmentsCount').textContent = data.attachments.length;
+
+                // Update pagination
+                document.getElementById('paginationInfo').textContent = `Page ${data.page} / ${data.total_pages}`;
+                prevBtn.disabled = data.page <= 1;
+                nextBtn.disabled = data.page >= data.total_pages;
+
+                renderTable();
+
+                loadingEl.style.display = 'none';
+                statsEl.style.display = 'flex';
+                tableEl.style.display = 'table';
+                paginationEl.style.display = 'flex';
+
+            } catch (err) {
+                showError(err.message);
+            }
+        }
+
+        function sortNotes(field) {
+            if (currentSort.field === field) {
+                currentSort.order = currentSort.order === 'asc' ? 'desc' : 'asc';
+            } else {
+                currentSort.field = field;
+                currentSort.order = 'asc';
+            }
+
+            // Update header styles
+            document.querySelectorAll('th').forEach(th => {
+                th.classList.remove('sorted-asc', 'sorted-desc');
+                if (th.dataset.sort === field) {
+                    th.classList.add(currentSort.order === 'asc' ? 'sorted-asc' : 'sorted-desc');
+                }
+            });
+
+            notesData.sort((a, b) => {
+                let valA = a[field];
+                let valB = b[field];
+
+                // Handle nulls
+                if (valA === null || valA === undefined) valA = '';
+                if (valB === null || valB === undefined) valB = '';
+
+                // Compare
+                if (typeof valA === 'string') {
+                    valA = valA.toLowerCase();
+                    valB = valB.toLowerCase();
+                }
+
+                if (valA < valB) return currentSort.order === 'asc' ? -1 : 1;
+                if (valA > valB) return currentSort.order === 'asc' ? 1 : -1;
+                return 0;
+            });
+
+            renderTable();
+        }
+
+        function renderTable() {
+            bodyEl.innerHTML = notesData.map(note => `
+                <tr class="${note.is_deleted ? 'deleted' : ''}">
+                    <td>${escapeHtml(note.path)}</td>
+                    <td class="hash" title="${escapeHtml(note.content_hash)}">${truncateHash(note.content_hash)}</td>
+                    <td class="datetime">${formatDate(note.modified_at)}</td>
+                    <td class="datetime">${formatDate(note.synced_at)}</td>
+                    <td>${note.is_deleted ? 'Oui' : 'Non'}</td>
+                    <td class="size">${formatSize(note.size_bytes)}</td>
+                </tr>
+            `).join('');
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        // Event listeners
+        document.querySelectorAll('th[data-sort]').forEach(th => {
+            th.addEventListener('click', () => sortNotes(th.dataset.sort));
+        });
+
+        prevBtn.addEventListener('click', () => {
+            if (currentPage > 1) {
+                currentPage--;
+                fetchNotes();
+            }
+        });
+
+        nextBtn.addEventListener('click', () => {
+            if (currentPage < totalPages) {
+                currentPage++;
+                fetchNotes();
+            }
+        });
+
+        let filterTimeout;
+        pathFilterEl.addEventListener('input', () => {
+            clearTimeout(filterTimeout);
+            filterTimeout = setTimeout(() => {
+                currentPage = 1;
+                fetchNotes();
+            }, 300);
+        });
+
+        includeDeletedEl.addEventListener('change', () => {
+            currentPage = 1;
+            fetchNotes();
+        });
+
+        // Initial load
+        fetchNotes();
+    </script>
+</body>
+</html>

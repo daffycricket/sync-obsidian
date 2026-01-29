@@ -1,7 +1,11 @@
-from datetime import timedelta
-from fastapi import FastAPI, Depends, HTTPException, status
+from datetime import datetime, timedelta
+from typing import Optional
+from pathlib import Path
+from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from contextlib import asynccontextmanager
@@ -13,13 +17,14 @@ from .schemas import (
     UserCreate, UserLogin, Token, UserResponse,
     SyncRequest, SyncResponse,
     PushNotesRequest, PushNotesResponse,
-    PullNotesRequest, PullNotesResponse
+    PullNotesRequest, PullNotesResponse,
+    SyncedNotesResponse
 )
 from .auth import (
-    get_password_hash, authenticate_user, 
+    get_password_hash, authenticate_user,
     create_access_token, get_current_user
 )
-from .sync import process_sync, push_notes, pull_notes
+from .sync import process_sync, push_notes, pull_notes, get_synced_notes
 
 
 @asynccontextmanager
@@ -50,12 +55,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# Fichiers statiques
+static_path = Path(__file__).parent / "static"
+app.mount("/static", StaticFiles(directory=static_path), name="static")
+
 
 # ============ Health Check ============
 
 @app.get("/health")
 async def health_check():
     return {"status": "healthy", "service": "syncobsidian"}
+
+
+@app.get("/sync-viewer")
+async def sync_viewer():
+    """Page HTML de visualisation des notes synchronisées."""
+    return FileResponse(static_path / "sync-viewer.html")
 
 
 # ============ Auth Endpoints ============
@@ -153,6 +168,33 @@ async def sync_pull(
     """
     notes = await pull_notes(db, current_user, request.paths)
     return PullNotesResponse(notes=notes)
+
+
+@app.get("/sync/notes", response_model=SyncedNotesResponse)
+async def get_notes(
+    page: int = Query(1, ge=1, description="Numéro de page"),
+    page_size: int = Query(50, ge=1, le=200, description="Éléments par page"),
+    include_deleted: bool = Query(False, description="Inclure les notes supprimées"),
+    path_filter: Optional[str] = Query(None, description="Filtrer par préfixe de chemin"),
+    modified_after: Optional[datetime] = Query(None, description="Notes modifiées après cette date"),
+    modified_before: Optional[datetime] = Query(None, description="Notes modifiées avant cette date"),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Liste toutes les notes synchronisées pour l'utilisateur connecté.
+    Utile pour le debug et la visualisation de l'état du serveur.
+    """
+    return await get_synced_notes(
+        db=db,
+        user=current_user,
+        page=page,
+        page_size=page_size,
+        include_deleted=include_deleted,
+        path_filter=path_filter,
+        modified_after=modified_after,
+        modified_before=modified_before
+    )
 
 
 if __name__ == "__main__":

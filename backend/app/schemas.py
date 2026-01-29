@@ -90,3 +90,38 @@ class PullNotesRequest(BaseModel):
 
 class PullNotesResponse(BaseModel):
     notes: List[NoteContent]
+
+
+# Schemas pour GET /sync/notes (visualisation des notes synchronisées)
+class SyncedNoteInfo(BaseModel):
+    path: str
+    content_hash: str
+    modified_at: datetime
+    synced_at: datetime
+    is_deleted: bool
+    size_bytes: Optional[int] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SyncedAttachmentInfo(BaseModel):
+    path: str
+    content_hash: str
+    modified_at: datetime
+    synced_at: datetime
+    is_deleted: bool
+    size_bytes: int
+    mime_type: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+
+class SyncedNotesResponse(BaseModel):
+    total_count: int
+    page: int
+    page_size: int
+    total_pages: int
+    notes: List[SyncedNoteInfo]
+    attachments: List[SyncedAttachmentInfo]
