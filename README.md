@@ -450,7 +450,14 @@ syncobsidian/
 │   │   ├── types.ts             # Types TypeScript (API + settings)
 │   │   ├── settings.ts          # Page de configuration + rapport sync
 │   │   ├── api-client.ts        # Client HTTP pour l'API
-│   │   └── sync-service.ts      # Service de sync (notes + attachments)
+│   │   ├── sync-service.ts      # Service de sync (notes + attachments)
+│   │   ├── __mocks__/
+│   │   │   └── obsidian.ts      # Mocks de l'API Obsidian pour les tests
+│   │   └── __tests__/
+│   │       ├── api-client.test.ts    # Tests ApiClient (28 tests)
+│   │       ├── sync-service.test.ts  # Tests SyncService (31 tests)
+│   │       └── settings.test.ts      # Tests formatage rapport (26 tests)
+│   ├── jest.config.js           # Configuration Jest
 │   ├── manifest.json            # Métadonnées plugin (version 1.6.0)
 │   ├── package.json
 │   └── esbuild.config.mjs
@@ -484,6 +491,14 @@ cd backend
 cd obsidian-plugin
 npm install
 npm run dev  # Mode watch
+```
+
+### Tests plugin
+```bash
+cd obsidian-plugin
+npm test              # Lancer tous les tests (85 tests)
+npm run test:watch    # Mode watch (re-run on change)
+npm run test:coverage # Avec rapport de couverture
 ```
 
 ---
@@ -557,6 +572,15 @@ DELETE FROM users WHERE id = 1;
 | `users` | `id`, `username`, `email`, `hashed_password`, `created_at`, `is_active` |
 | `notes` | `id`, `user_id`, `path`, `content_hash`, `modified_at`, `synced_at`, `is_deleted` |
 | `attachments` | `id`, `user_id`, `path`, `content_hash`, `size`, `mime_type`, `modified_at`, `synced_at`, `is_deleted` |
+
+**Contraintes et index** :
+
+| Table | Contrainte | Description |
+|-------|------------|-------------|
+| `users` | `UNIQUE(username)` | Un seul compte par username |
+| `users` | `UNIQUE(email)` | Un seul compte par email |
+| `notes` | `UNIQUE(user_id, path)` | Une seule note par chemin par utilisateur |
+| `attachments` | `UNIQUE(user_id, path)` | Un seul attachment par chemin par utilisateur |
 
 ### Fichiers (notes et attachments)
 

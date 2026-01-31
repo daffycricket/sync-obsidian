@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, Text, Boolean, ForeignKey, UniqueConstraint
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from .database import Base
@@ -32,14 +32,14 @@ class Note(Base):
     owner = relationship("User", back_populates="notes")
     
     __table_args__ = (
-        # Index unique sur user_id + path
+        UniqueConstraint('user_id', 'path', name='uq_notes_user_path'),
         {"sqlite_autoincrement": True},
     )
 
 
 class Attachment(Base):
     __tablename__ = "attachments"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     path = Column(String(500), nullable=False)
@@ -49,5 +49,9 @@ class Attachment(Base):
     modified_at = Column(DateTime, nullable=False)
     synced_at = Column(DateTime, default=datetime.utcnow)
     is_deleted = Column(Boolean, default=False)
-    
+
     owner = relationship("User", back_populates="attachments")
+
+    __table_args__ = (
+        UniqueConstraint('user_id', 'path', name='uq_attachments_user_path'),
+    )
