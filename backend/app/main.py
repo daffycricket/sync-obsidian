@@ -12,8 +12,8 @@ from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, JSONResponse
 
-from .config import settings
-from .database import init_db
+from .core.config import settings
+from .core.database import init_db
 from .routers import auth, sync
 
 

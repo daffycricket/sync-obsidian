@@ -16,7 +16,7 @@ from ..schemas import (
     CompareResponse, CompareSummary,
     NoteToPush, NoteToPull, NoteConflict, NoteDeletedOnServer
 )
-from .. import storage
+from ..core import storage
 from .sync_utils import (
     normalize_datetime,
     get_server_notes,

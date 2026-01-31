@@ -418,14 +418,14 @@ syncobsidian/
 ├── backend/
 │   ├── app/
 │   │   ├── main.py              # Point d'entrée FastAPI (monte les routers)
-│   │   ├── config.py            # Configuration (env vars)
-│   │   ├── database.py          # Connexion SQLite async
 │   │   ├── models.py            # Modèles SQLAlchemy (User, Note, Attachment)
 │   │   ├── schemas.py           # Schémas Pydantic (validation API)
-│   │   ├── auth.py              # Authentification JWT + bcrypt
-│   │   ├── sync.py              # Facade (rétrocompatibilité)
-│   │   ├── storage.py           # Gestion fichiers (lecture/écriture)
-│   │   ├── logging_config.py    # Configuration des logs
+│   │   ├── core/                # Infrastructure technique
+│   │   │   ├── config.py        # Configuration (env vars)
+│   │   │   ├── database.py      # Connexion SQLite async
+│   │   │   ├── security.py      # Authentification JWT + bcrypt
+│   │   │   ├── storage.py       # Gestion fichiers (lecture/écriture)
+│   │   │   └── logging.py       # Configuration des logs
 │   │   ├── routers/             # Endpoints API (Controleurs)
 │   │   │   ├── auth.py          # /auth/* (register, login, me)
 │   │   │   └── sync.py          # /sync/* (push, pull, compare...)

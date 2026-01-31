@@ -6,20 +6,20 @@ import os
 class Settings(BaseSettings):
     # Database
     database_url: str = "sqlite+aiosqlite:///./data/syncobsidian.db"
-    
+
     # JWT
     secret_key: str = "change-this-secret-key-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440  # 24 heures
-    
+
     # Storage
     storage_path: str = "./data/storage"
-    
+
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
     request_timeout_seconds: int = 30
-    
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

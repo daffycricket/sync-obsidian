@@ -22,8 +22,8 @@ os.environ["STORAGE_PATH"] = str(TEST_STORAGE_PATH)
 os.environ["SECRET_KEY"] = "test-secret-key-for-testing"
 
 from app.main import app
-from app.database import Base, get_db
-from app.config import settings
+from app.core.database import Base, get_db
+from app.core.config import settings
 
 
 def ensure_test_dirs():

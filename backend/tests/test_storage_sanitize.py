@@ -2,7 +2,7 @@
 Tests unitaires pour la fonction sanitize_path.
 """
 import pytest
-from app.storage import sanitize_path
+from app.core.storage import sanitize_path
 
 
 class TestSanitizePath:

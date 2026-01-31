@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..models import Attachment, User
 from ..schemas import AttachmentContent
-from .. import storage
+from ..core import storage
 from .sync_utils import (
     get_attachment_by_path,
     MAX_ATTACHMENT_SIZE

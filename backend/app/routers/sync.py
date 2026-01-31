@@ -7,7 +7,8 @@ from typing import Optional
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from ..database import get_db
+from ..core.database import get_db
+from ..core.security import get_current_user
 from ..models import User
 from ..schemas import (
     SyncRequest, SyncResponse,
@@ -18,7 +19,6 @@ from ..schemas import (
     SyncedNotesResponse,
     CompareRequest, CompareResponse
 )
-from ..auth import get_current_user
 from ..services import (
     process_sync,
     push_notes, pull_notes,

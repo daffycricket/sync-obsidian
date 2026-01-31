@@ -12,7 +12,7 @@ from ..schemas import (
     NoteMetadata, NoteContent, AttachmentMetadata,
     SyncRequest, SyncResponse
 )
-from .. import storage
+from ..core import storage
 from .sync_utils import (
     normalize_datetime,
     get_server_notes,

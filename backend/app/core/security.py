@@ -1,3 +1,6 @@
+"""
+Sécurité : JWT, bcrypt, authentification.
+"""
 from datetime import datetime, timedelta
 from typing import Optional
 from fastapi import Depends, HTTPException, status
@@ -9,22 +12,22 @@ from sqlalchemy import select
 
 from .config import settings
 from .database import get_db
-from .models import User
-from .schemas import TokenData
+from ..models import User
+from ..schemas import TokenData
 
 security = HTTPBearer()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return bcrypt.checkpw(
-        plain_password.encode("utf-8"), 
+        plain_password.encode("utf-8"),
         hashed_password.encode("utf-8")
     )
 
 
 def get_password_hash(password: str) -> str:
     return bcrypt.hashpw(
-        password.encode("utf-8"), 
+        password.encode("utf-8"),
         bcrypt.gensalt()
     ).decode("utf-8")
 
@@ -61,26 +64,26 @@ async def get_current_user(
         detail="Identifiants invalides",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     token_data = decode_token(credentials.credentials)
     if token_data is None:
         raise credentials_exception
-    
+
     result = await db.execute(select(User).where(User.id == token_data.user_id))
     user = result.scalar_one_or_none()
-    
+
     if user is None:
         raise credentials_exception
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Utilisateur inactif")
-    
+
     return user
 
 
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> Optional[User]:
     result = await db.execute(select(User).where(User.username == username))
     user = result.scalar_one_or_none()
-    
+
     if not user:
         return None
     if not verify_password(password, user.hashed_password):
