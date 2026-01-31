@@ -417,23 +417,35 @@ Il est stocké comme métadonnée mais **n'est pas validé** côté serveur.
 syncobsidian/
 ├── backend/
 │   ├── app/
-│   │   ├── main.py              # Point d'entrée FastAPI + endpoints
+│   │   ├── main.py              # Point d'entrée FastAPI (monte les routers)
 │   │   ├── config.py            # Configuration (env vars)
 │   │   ├── database.py          # Connexion SQLite async
 │   │   ├── models.py            # Modèles SQLAlchemy (User, Note, Attachment)
 │   │   ├── schemas.py           # Schémas Pydantic (validation API)
 │   │   ├── auth.py              # Authentification JWT + bcrypt
-│   │   ├── sync.py              # Logique de synchronisation notes + attachments
+│   │   ├── sync.py              # Facade (rétrocompatibilité)
 │   │   ├── storage.py           # Gestion fichiers (lecture/écriture)
-│   │   └── logging_config.py    # Configuration des logs
-│   ├── tests/                   # Tests pytest
-│   │   ├── conftest.py          # Fixtures pytest
+│   │   ├── logging_config.py    # Configuration des logs
+│   │   ├── routers/             # Endpoints API (Controleurs)
+│   │   │   ├── auth.py          # /auth/* (register, login, me)
+│   │   │   └── sync.py          # /sync/* (push, pull, compare...)
+│   │   └── services/            # Logique métier
+│   │       ├── sync_utils.py    # Helpers partagés (datetime, queries)
+│   │       ├── notes_sync.py    # Sync notes (push, pull, process)
+│   │       ├── attachments_sync.py  # Sync attachments
+│   │       └── compare_sync.py  # Comparaison client/serveur
+│   ├── tests/                   # Tests d'intégration (API)
+│   │   ├── conftest.py          # Fixtures pytest (client, auth, db)
 │   │   ├── test_auth.py         # Tests authentification
 │   │   ├── test_sync_*.py       # Tests synchronisation
 │   │   ├── test_attachments*.py # Tests pièces jointes
-│   │   └── ...
-│   ├── run_tests.sh             # Lancement des tests
-│   ├── tests_remote.sh          # Lancement de tests E2E post déploiement
+│   │   └── unit/                # Tests unitaires (mocks)
+│   │       ├── test_sync_utils.py
+│   │       ├── test_notes_sync.py
+│   │       ├── test_attachments_sync.py
+│   │       └── test_compare_sync.py
+│   ├── run_tests.sh             # Lancement des tests d'intégration
+│   ├── tests_remote.sh          # Tests E2E post-déploiement
 │   ├── data/                    # Données persistantes (volume Docker)
 │   │   ├── syncobsidian.db      # Base SQLite
 │   │   └── storage/             # Fichiers par utilisateur
@@ -481,9 +493,24 @@ uvicorn app.main:app --reload
 ```
 
 ### Tests backend
+
 ```bash
 cd backend
+source venv/bin/activate  # Si pas déjà actif
+
+# Tests unitaires uniquement (rapide, avec mocks)
+pytest tests/unit/ -v                    # 60 tests
+
+# Tests d'intégration uniquement (API réelle)
+pytest tests/ --ignore=tests/unit/ -v    # ~138 tests
+
+# Tous les tests
+pytest tests/ -v                         # ~198 tests
+
+# Via le script (intégration uniquement, gère le venv)
 ./run_tests.sh
+./run_tests.sh -v           # Verbose
+./run_tests.sh test_auth    # Filtrer par nom
 ```
 
 ### Plugin
