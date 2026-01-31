@@ -109,6 +109,16 @@ export class SyncService {
     }
 
     /**
+     * Détecte les fichiers supprimés (présents dans knownPaths mais plus localement)
+     */
+    private detectDeletedFiles(currentPaths: Set<string>, knownPaths: string[]): string[] {
+        if (!knownPaths || knownPaths.length === 0) {
+            return [];
+        }
+        return knownPaths.filter(path => !currentPaths.has(path));
+    }
+
+    /**
      * Extrait les détails d'erreur pour un chemin de fichier
      * Détecte les caractères invalides selon les OS
      */
@@ -382,20 +392,14 @@ export class SyncService {
             }
         }
 
-        // Détecter les fichiers supprimés (présents dans knownFiles mais plus localement)
-        // Ne détecter les suppressions que si knownFiles n'est pas vide (évite faux positifs au premier sync)
-        if (this.settings.knownFiles && this.settings.knownFiles.length > 0) {
-            for (const knownPath of this.settings.knownFiles) {
-                if (!currentPaths.has(knownPath)) {
-                    // Fichier supprimé localement
-                    notes.push({
-                        path: knownPath,
-                        content_hash: "",
-                        modified_at: new Date().toISOString(),
-                        is_deleted: true,
-                    });
-                }
-            }
+        // Détecter les fichiers supprimés
+        for (const deletedPath of this.detectDeletedFiles(currentPaths, this.settings.knownFiles)) {
+            notes.push({
+                path: deletedPath,
+                content_hash: "",
+                modified_at: new Date().toISOString(),
+                is_deleted: true,
+            });
         }
 
         return { notes, failed };
@@ -447,19 +451,15 @@ export class SyncService {
         }
 
         // Détecter les attachments supprimés
-        if (this.settings.knownAttachments && this.settings.knownAttachments.length > 0) {
-            for (const knownPath of this.settings.knownAttachments) {
-                if (!currentPaths.has(knownPath)) {
-                    attachments.push({
-                        path: knownPath,
-                        content_hash: "",
-                        size: 0,
-                        mime_type: null,
-                        modified_at: new Date().toISOString(),
-                        is_deleted: true,
-                    });
-                }
-            }
+        for (const deletedPath of this.detectDeletedFiles(currentPaths, this.settings.knownAttachments)) {
+            attachments.push({
+                path: deletedPath,
+                content_hash: "",
+                size: 0,
+                mime_type: null,
+                modified_at: new Date().toISOString(),
+                is_deleted: true,
+            });
         }
 
         return { attachments, failed };

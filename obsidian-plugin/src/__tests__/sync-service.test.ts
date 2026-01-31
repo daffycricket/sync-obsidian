@@ -226,6 +226,43 @@ describe('SyncService', () => {
         });
     });
 
+    describe('detectDeletedFiles', () => {
+        it('should return empty array when knownPaths is empty', () => {
+            const detectDeletedFiles = (service as any).detectDeletedFiles.bind(service);
+            const currentPaths = new Set(['file1.md', 'file2.md']);
+
+            expect(detectDeletedFiles(currentPaths, [])).toEqual([]);
+            expect(detectDeletedFiles(currentPaths, null)).toEqual([]);
+            expect(detectDeletedFiles(currentPaths, undefined)).toEqual([]);
+        });
+
+        it('should return empty array when no files were deleted', () => {
+            const detectDeletedFiles = (service as any).detectDeletedFiles.bind(service);
+            const currentPaths = new Set(['file1.md', 'file2.md']);
+            const knownPaths = ['file1.md', 'file2.md'];
+
+            expect(detectDeletedFiles(currentPaths, knownPaths)).toEqual([]);
+        });
+
+        it('should return deleted files', () => {
+            const detectDeletedFiles = (service as any).detectDeletedFiles.bind(service);
+            const currentPaths = new Set(['file1.md']);
+            const knownPaths = ['file1.md', 'file2.md', 'file3.md'];
+
+            const result = detectDeletedFiles(currentPaths, knownPaths);
+            expect(result).toEqual(['file2.md', 'file3.md']);
+        });
+
+        it('should return all known files when all are deleted', () => {
+            const detectDeletedFiles = (service as any).detectDeletedFiles.bind(service);
+            const currentPaths = new Set<string>();
+            const knownPaths = ['file1.md', 'file2.md'];
+
+            const result = detectDeletedFiles(currentPaths, knownPaths);
+            expect(result).toEqual(['file1.md', 'file2.md']);
+        });
+    });
+
     describe('determineStatus', () => {
         it('should return "error" when errorType is provided', () => {
             const determineStatus = (service as any).determineStatus.bind(service);
