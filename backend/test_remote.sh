@@ -2,10 +2,10 @@
 # =============================================================================
 # Tests fonctionnels SyncObsidian sur un serveur distant
 # Usage: ./test_remote.sh [SERVER_URL]
-# Exemple: ./test_remote.sh https://sync.example.com:20443
+# Exemple: ./test_remote.sh https://sync.example.com
 # =============================================================================
 
-SERVER="${1:-https://sync.example.com:20443}"
+SERVER="${1:-https://sync.example.com}"
 USER="testuser_$(date +%s)"
 PASS="testpassword123"
 EMAIL="${USER}@test.com"

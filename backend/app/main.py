@@ -1,11 +1,13 @@
 from datetime import datetime, timedelta
 from typing import Optional
 from pathlib import Path
+import asyncio
+from starlette.middleware.base import BaseHTTPMiddleware                                                                                                                          
 from fastapi import FastAPI, Depends, HTTPException, status, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from contextlib import asynccontextmanager
@@ -48,6 +50,20 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan
 )
+                
+# Timeout sur les requêtes (configurable via REQUEST_TIMEOUT_SECONDS)
+class TimeoutMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        try:
+            async with asyncio.timeout(settings.request_timeout_seconds):
+                return await call_next(request)
+        except asyncio.TimeoutError:
+            return JSONResponse(
+                status_code=408,
+                content={"detail": "Request timeout"}
+            )
+
+app.add_middleware(TimeoutMiddleware)
 
 # Compression GZip pour réduire la bande passante (~80% sur du Markdown)
 app.add_middleware(GZipMiddleware, minimum_size=500)  # Compresse si > 500 octets

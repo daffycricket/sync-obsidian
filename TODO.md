@@ -1,158 +1,69 @@
-# TODO - Déploiement SyncObsidian
+# Backlog du projet
 
-# Actions de Sécurisation Priorisées
+## Qualité de code (technique)
 
-## Tableau des Actions
+| # | Priorité | Action | Description | Ce que ça corrige | Rétrocompatible | Dépendances additionnelles | Impact performance | Autres impacts / Risques | Commentaires / Stratégie de mitigation |
+|---|----------|--------|-------------|-------------------|-----------------|---------------------------|-------------------|--------------------------|----------------------------------------|
+| t1 | **P1 - CRITIQUE** | **Tests plugin TypeScript** | Ajouter une suite de tests pour le plugin Obsidian (1993 lignes non testées) | **Maintenabilité** : permet de refactorer sans régression, documente le comportement attendu | ✅ Oui | `vitest` ou `jest`, `@testing-library/dom` pour les composants UI | Aucun (tests exécutés en dev uniquement) | **Risque** : Courbe d'apprentissage testing Obsidian plugins. Mocking de l'API Obsidian nécessaire. | **Stratégie** : (1) Commencer par `api-client.ts` (facile à mocker). (2) Tester `sync-service.ts` avec mocks du vault. (3) `settings.ts` en dernier (UI complexe). Prioriser les TU sur la logique métier. |
+| t2 | **P1 - CRITIQUE** | **Contrainte UNIQUE(user_id, path)** | Ajouter l'index unique manquant sur les tables `notes` et `attachments` dans `models.py` | **Intégrité données** : empêche les doublons en cas de requêtes concurrentes. Actuellement le code le gère mais sans garantie DB. | ⚠️ Migration requise | Aucune | Amélioration (les requêtes par path seront indexées) | **Risque** : Si des doublons existent déjà en prod, la migration échouera. | **Stratégie** : (1) Script de détection des doublons existants. (2) Nettoyage manuel si nécessaire. (3) Alembic migration avec `CREATE UNIQUE INDEX`. (4) TI : test de concurrence avec 2 requêtes simultanées. |
+| t3 | **P1 - HAUTE** | **Refactoring sync.py** | Extraire le fichier `sync.py` (774 lignes) en 3 modules : `notes_sync.py`, `attachments_sync.py`, `compare_sync.py` | **Maintenabilité** : fichier trop gros, 4 responsabilités mélangées, hotspot git (9 modifications) | ✅ Oui | Aucune | Aucun | **Risque ÉLEVÉ** : Régression sur la logique de sync (cœur métier). Beaucoup de dépendances internes. | **Stratégie** : (1) **Tests first** : s'assurer que les 117 TI existants passent. (2) Extraire fonction par fonction avec commits atomiques. (3) Garder les imports dans `sync.py` comme facade temporaire. (4) Valider chaque extraction par les TI. Ne pas modifier la logique, juste déplacer. |
+| t4 | **P2 - MOYENNE** | **Supprimer code mort** | Retirer ou implémenter les commandes `force-push` et `force-pull` dans `main.ts:36-50` qui affichent "Fonction non implémentée" | **UX** : évite la confusion utilisateur, réduit le code inutile | ✅ Oui | Aucune | Aucun | **Risque faible** : Aucun si on supprime. Si on implémente : risque de perte de données si mal utilisé. | **Stratégie** : Option A (recommandé) : Supprimer les commandes. Option B : Implémenter avec confirmation utilisateur + TI pour valider le comportement. |
+| t5 | **P2 - MOYENNE** | **Tests unitaires backend** | Ajouter des TU pour les fonctions métier de `sync.py` : `process_sync`, `push_notes`, `compare_notes` | **Couverture** : les TI testent les endpoints mais pas la logique isolée. Facilite le refactoring. | ✅ Oui | Aucune (pytest déjà présent) | Aucun | **Risque** : Temps d'écriture. Les TI couvrent déjà bien les scénarios. | **Stratégie** : (1) Mocker `db` et `storage`. (2) Tester les cas limites non couverts par TI : hash collision, timezone edge cases, suppressions concurrentes. Prioriser après le refactoring t3. |
+| t6 | **P2 - MOYENNE** | **Refactoring settings.ts** | Extraire la logique de formatage du rapport dans un fichier `report-formatter.ts` séparé de l'UI | **Maintenabilité** : `settings.ts` (668 lignes) mélange UI Obsidian et logique de formatage | ✅ Oui | Aucune | Aucun | **Risque modéré** : Régression sur l'affichage du rapport. Pas de tests actuels. | **Stratégie** : (1) **Tests first** : Écrire des TU pour `generateReportContent()` et `formatReportEntry()` AVANT extraction. (2) Extraire avec les tests comme filet de sécurité. (3) Tests manuels UI après. |
+| t7 | **P3 - BASSE** | **Factoriser duplication push** | Créer une fonction générique pour `push_notes` et `push_attachments` dans `sync.py` (pattern quasi-identique L.270-346 vs L.632-725) | **Maintenabilité** : DRY, réduit le risque de divergence entre les deux implémentations | ✅ Oui | Aucune | Aucun | **Risque modéré** : Généralisation peut introduire des bugs subtils (notes = texte, attachments = binaire). | **Stratégie** : (1) Attendre le refactoring t3. (2) Créer `_push_items()` générique avec type hints. (3) TI existants doivent tous passer. (4) Ajouter TU spécifique pour la fonction générique. |
+| t8 | **P3 - BASSE** | **Index sur modified_at** | Ajouter un index sur `notes.modified_at` et `attachments.modified_at` pour optimiser les requêtes filtrées | **Performance** : les requêtes `WHERE modified_at > X` seront plus rapides | ✅ Oui | Aucune | Amélioration (requêtes filtrées) | **Risque très faible** : Migration simple, pas de changement de code. | **Stratégie** : Migration Alembic simple. À faire si le volume de notes dépasse ~10 000 par utilisateur. Pas urgent actuellement. |
+| t9 | **P3 - BASSE** | **Factoriser collectLocal*** | Créer une fonction générique pour `collectLocalNotes` et `collectLocalAttachments` dans `sync-service.ts` (pattern identique L.356-402 vs L.404-466) | **Maintenabilité** : DRY côté plugin | ✅ Oui | Aucune | Aucun | **Risque** : Sans tests plugin (t1), risque de régression. | **Stratégie** : **Prérequis** : Faire t1 (tests plugin) d'abord. Ensuite factoriser avec TU comme filet. |
+| t10 | **P4 - OPTIONNEL** | **Enrichir docstrings** | Ajouter des docstrings détaillées sur les fonctions publiques de `sync.py` et JSDoc sur `sync-service.ts` | **Documentation** : facilite l'onboarding de nouveaux développeurs | ✅ Oui | Aucune | Aucun | Aucun risque. Temps d'écriture uniquement. | **Stratégie** : À faire lors du refactoring t3 et t6. Documenter au fil de l'eau plutôt qu'en batch. |
+
+### Ordre recommandé d'exécution
+
+```
+t2 (contrainte UNIQUE) ──► t1 (tests plugin) ──► t3 (refacto sync.py) ──► t5 (TU backend)
+                                    │
+                                    ▼
+                          t6 (refacto settings.ts) ──► t9 (factoriser collectLocal)
+                                    │
+                                    ▼
+                          t4 (code mort) ──► t7 (factoriser push)
+```
+
+**Rationale** :
+- t2 est un quick win critique (intégrité données)
+- t1 est le prérequis pour tout refactoring plugin
+- t3 doit être fait avec les TI existants comme filet
+- Les factorisations (t7, t9) viennent après les tests
+
+---
+
+## Sécurité
 
 | # | Priorité | Action | Description | Ce que ça corrige | Rétrocompatible | Dépendances additionnelles | Impact performance | Autres impacts | Commentaires |
 |---|----------|--------|-------------|-------------------|-----------------|---------------------------|-------------------|---------------|--------------|
-| 6 | **P1 - HAUTE** | **Timeouts sur requêtes** | Timeout de 30s max par requête pour éviter les connexions bloquantes | **DDoS** : empêche l'accumulation de connexions ouvertes | ✅ Oui | Aucune | Aucun (timeout passif) | Les requêtes longues (> 30s) échoueront avec erreur 408. | Protection transparente. Les requêtes normales ne sont pas affectées. |
-| 3 | **P1 - HAUTE** | **Limites de taille de fichier** | Limiter la taille des uploads (ex: 50MB par fichier, 1GB total par utilisateur) | **DDoS** : empêche la saturation disque et les attaques par gros fichiers | ✅ Oui | Aucune | Négligeable (vérification de `len()`) | Nécessite un calcul d'espace disque par utilisateur (scan initial possible) | Limite côté serveur uniquement. Erreur claire au client si dépassement. |
-| 8 | **P1 - HAUTE** | **Workers multiples** | Passer de 1 à 4 workers uvicorn pour gérer la charge | **DDoS** : meilleure résistance à la charge, moins de blocages | ✅ Oui | Aucune (uvicorn supporte nativement) | Amélioration sous charge (meilleure parallélisation) | Consommation RAM multipliée par le nombre de workers (4x environ) | Améliore les performances sans changement client. |
-| 9 | **P2 - MOYENNE** | **Réduction expiration tokens** | Passer de 24h à 1-2h pour limiter l'exposition en cas de vol | **Sécurité des tokens** : réduit la fenêtre d'exploitation si un token est compromis | ⚠️ Impact UX | Aucune | Aucun | Les utilisateurs devront se reconnecter plus souvent (impact UX) | À équilibrer avec l'UX. |
-| 10 | **P3 - BASSE** | **Validation MIME types** | Vérifier que les pièces jointes sont des types autorisés (images, PDF, etc.) | **Malware** : empêche l'upload de fichiers exécutables | ✅ Oui | `python-magic==0.4.27` (optionnel : `libmagic` système) | Léger (lecture des premiers bytes du fichier) | Nécessite `libmagic` installé sur le système (dépendance système) | Protection transparente. Le client reçoit une erreur claire si type refusé. |
-| 11 | **P3 - BASSE** | **Logs d'audit fichiers** | Logger tous les accès aux fichiers (lecture/écriture) avec user_id et timestamp | **Traçabilité** : permet de détecter les accès suspects et de déboguer | ✅ Oui | Aucune (utilise `logging` déjà présent) | Négligeable (écriture asynchrone) | Augmentation de la taille des logs (rotation nécessaire) | Aucun impact client. Utile pour le debugging et la sécurité. |
-| 12 | **P3 - BASSE** | **Health check protégé** | Ajouter un rate limit ou une authentification basique sur `/health` | **DDoS** : empêche le flood du health check | ⚠️ À vérifier | Aucune (utilise `slowapi` existant) | Négligeable | Si un monitoring externe utilise `/health`, s'assurer qu'il reste accessible | Protection simple. |
-| 13 | **P3 - BASSE** | **Monitoring métriques** | Ajouter des compteurs de requêtes, latence, erreurs (Prometheus ou simple) | **Observabilité** : détection précoce d'attaques ou de problèmes | ✅ Oui | `prometheus-client==0.19.0` (optionnel, peut être fait manuellement) | Négligeable (compteurs en mémoire) | Exposition d'un endpoint `/metrics` (optionnel) | Aucun impact client. Utile pour le monitoring. |
-| 14 | **P4 - OPTIONNEL** | **Blacklist de tokens** | Permettre la révocation de tokens avant expiration (logout) | **Sécurité des sessions** : permet de déconnecter un utilisateur compromis | ✅ Oui | `redis` recommandé (ou stockage en mémoire) | Léger (vérification en mémoire ou Redis) | Nécessite un stockage persistant (Redis recommandé) ou perte au redémarrage | Améliore la sécurité mais pas critique pour une petite app. |
-| 15 | **P4 - OPTIONNEL** | **Reset mot de passe** | Système d'email pour réinitialiser les mots de passe oubliés | **UX + Sécurité** : évite les comptes abandonnés avec mots de passe faibles | ✅ Oui | `aiosmtplib` ou service externe (SendGrid, etc.) | Négligeable (envoi asynchrone) | Nécessite un service email (SMTP ou API externe) et gestion de tokens de reset | Améliore l'expérience utilisateur. Nécessite une configuration email. |
-| 16 | **P4 - OPTIONNEL** | **Circuit breaker** | Arrêter temporairement un endpoint si trop d'erreurs | **Résilience** : évite la cascade de pannes si un composant plante | ✅ Oui | `pybreaker==1.0.1` (optionnel, peut être fait manuellement) | Négligeable | Complexité de code supplémentaire | Protection avancée. Utile si l'app grandit. |
-| 4 | **P4 - OPTIONNEL** | **Validation de mot de passe** | Exiger minimum 12 caractères avec majuscule, minuscule, chiffre | **Sécurité des comptes** : réduit le risque de comptes compromis | ✅ Oui | Aucune (utilise `re` déjà présent) | Négligeable (< 1ms) | Aucun | Validation côté serveur. Les anciens comptes restent valides. |
-| 5 | **P4 - OPTIONNEL** | **CORS restrictif** | Remplacer `allow_origins=["*"]` par une liste de domaines autorisés | **CSRF/Attaques cross-origin** : empêche les requêtes depuis des sites malveillants | ⚠️ À tester | Aucune | Aucun | Configuration à maintenir si nouveaux clients. | Si le plugin Obsidian fait des requêtes depuis `file://` ou un domaine spécifique, l'adapter. |
+| s2 | **P2 - MOYENNE** | **Réduction expiration tokens** | Passer de 24h à 1-2h pour limiter l'exposition en cas de vol | **Sécurité des tokens** : réduit la fenêtre d'exploitation si un token est compromis | ⚠️ Impact UX | Aucune | Aucun | Les utilisateurs devront se reconnecter plus souvent (impact UX) | À équilibrer avec l'UX. |
+| s3 | **P3 - BASSE** | **Health check protégé** | Ajouter un rate limit ou une authentification basique sur `/health` | **DDoS** : empêche le flood du health check | ⚠️ À vérifier | Aucune (utilise `slowapi` existant) | Négligeable | Si un monitoring externe utilise `/health`, s'assurer qu'il reste accessible | Protection simple. |
+| s4 | **P4 - OPTIONNEL** | **Reset mot de passe** | Système d'email pour réinitialiser les mots de passe oubliés | **UX + Sécurité** : évite les comptes abandonnés avec mots de passe faibles | ✅ Oui | `aiosmtplib` ou service externe (SendGrid, etc.) | Négligeable (envoi asynchrone) | Nécessite un service email (SMTP ou API externe) et gestion de tokens de reset | Améliore l'expérience utilisateur. Nécessite une configuration email. |
+| s5 | **P4 - OPTIONNEL** | **Validation de mot de passe** | Exiger minimum 12 caractères avec majuscule, minuscule, chiffre | **Sécurité des comptes** : réduit le risque de comptes compromis | ✅ Oui | Aucune (utilise `re` déjà présent) | Négligeable (< 1ms) | Aucun | Validation côté serveur. Les anciens comptes restent valides. |
+| s6 | **P4 - OPTIONNEL** | **Workers multiples** | Passer de 1 à 4 workers uvicorn pour gérer la charge | **DDoS** : meilleure résistance à la charge, moins de blocages | ✅ Oui | Aucune (uvicorn supporte nativement) | Amélioration sous charge (meilleure parallélisation) | Consommation RAM multipliée par le nombre de workers (4x environ) | Améliore les performances sans changement client. |
+| s7 | **P4 - OPTIONNEL** | **Validation MIME types** | Vérifier que les pièces jointes sont des types autorisés (images, PDF, etc.) | **Malware** : empêche l'upload de fichiers exécutables | ✅ Oui | `python-magic==0.4.27` (optionnel : `libmagic` système) | Léger (lecture des premiers bytes du fichier) | Nécessite `libmagic` installé sur le système (dépendance système) | Protection transparente. Le client reçoit une erreur claire si type refusé. |
+| s8 | **P4 - OPTIONNEL** | **Logs d'audit fichiers** | Logger tous les accès aux fichiers (lecture/écriture) avec user_id et timestamp | **Traçabilité** : permet de détecter les accès suspects et de déboguer | ✅ Oui | Aucune (utilise `logging` déjà présent) | Négligeable (écriture asynchrone) | Augmentation de la taille des logs (rotation nécessaire) | Aucun impact client. Utile pour le debugging et la sécurité. |
+| s9 | **P4 - OPTIONNEL** | **Monitoring métriques** | Ajouter des compteurs de requêtes, latence, erreurs (Prometheus ou simple) | **Observabilité** : détection précoce d'attaques ou de problèmes | ✅ Oui | `prometheus-client==0.19.0` (optionnel, peut être fait manuellement) | Négligeable (compteurs en mémoire) | Exposition d'un endpoint `/metrics` (optionnel) | Aucun impact client. Utile pour le monitoring. |
+| s10 | **P4 - OPTIONNEL** | **Blacklist de tokens** | Permettre la révocation de tokens avant expiration (logout) | **Sécurité des sessions** : permet de déconnecter un utilisateur compromis | ✅ Oui | `redis` recommandé (ou stockage en mémoire) | Léger (vérification en mémoire ou Redis) | Nécessite un stockage persistant (Redis recommandé) ou perte au redémarrage | Améliore la sécurité mais pas critique pour une petite app. |
 
+---
+
+## Fonctionnel
+
+| # | Priorité | Action | Description | Ce que ça corrige | Rétrocompatible | Dépendances additionnelles | Impact performance | Autres impacts | Commentaires |
+|---|----------|--------|-------------|-------------------|-----------------|---------------------------|-------------------|---------------|--------------|
+| | | | *(Aucun ticket fonctionnel pour l'instant)* | | | | | | |
+
+---
 
 ## Légende
 
 - ✅ Oui : Aucun changement client nécessaire
 - ⚠️ À tester : Vérifier le comportement du client actuel
 - ⚠️ Impact UX : Changement visible pour l'utilisateur (mais compatible)
-
-## Résumé des Dépendances Additionnelles
-
-### Obligatoires (P0)
-- `slowapi==0.1.9` (pour actions #2 et #7)
-
-### Optionnelles (P3)
-- `python-magic==0.4.27` + `libmagic` système (pour action #10)
-- `prometheus-client==0.19.0` (pour action #13)
-
-### Optionnelles (P4)
-- `redis` (pour action #14 - blacklist distribuée)
-- `aiosmtplib` (pour action #15 - reset password)
-- `pybreaker==1.0.1` (pour action #16)
-
-## Notes Importantes
-
-1. **`slowapi`** est la seule dépendance obligatoire pour les protections critiques (P0-P2).
-2. Les impacts de performance sont généralement **négligeables** (< 1ms par requête).
-3. **`libmagic`** est une dépendance système (pas Python) pour la validation MIME.
-4. **Redis** n'est nécessaire que pour des fonctionnalités avancées (blacklist distribuée, rate limiting multi-instances).
-
-
-## 7. 🔄 Installer le plugin sur les devices
-
-### ⬜ Android
-
-1. Copier `main.js` et `manifest.json` sur le téléphone
-2. Utiliser un gestionnaire de fichiers pour les placer dans :
-   ```
-   /storage/emulated/0/Documents/Obsidian/MonVault/.obsidian/plugins/syncobsidian/
-   ```
-3. Redémarrer Obsidian
-4. Activer le plugin dans les paramètres
-
-**Alternative** : Utiliser un cloud (Google Drive, Syncthing) pour sync le dossier `.obsidian/plugins/`
-
-### ⬜ iOS
-
-1. Ouvrir l'app **Fichiers**
-2. Naviguer vers : **Sur mon iPhone** → **Obsidian** → **MonVault** → **.obsidian** → **plugins**
-3. Créer un dossier `syncobsidian`
-4. Copier `main.js` et `manifest.json` dedans (via AirDrop, iCloud, ou câble)
-5. Redémarrer Obsidian
-6. Activer le plugin
-
-**Alternative** : Utiliser iCloud pour sync le dossier plugins depuis le Mac
-
----
-
-## 8. ⬜ Configurer le plugin sur chaque device
-
-Dans les paramètres du plugin SyncObsidian :
-
-| Champ | Valeur |
-|-------|--------|
-| URL du serveur | `https://mon-vault.duckdns.org:20443` |
-| Nom d'utilisateur | `monuser` |
-| Mot de passe | `ton-mot-de-passe` |
-
-> 💡 N'oubliez pas le port `:20443` dans l'URL !
-
-Cliquer sur **Se connecter**, puis **Synchroniser**.
-
----
-
-## 9. ⬜ Vérifier le problème de refresh token
-
-### État actuel
-
-Le système utilise un **token JWT avec expiration de 24h**, sans refresh token.
-
-### Problèmes potentiels
-
-| Problème | Impact |
-|----------|--------|
-| Token expire après 24h | L'utilisateur doit se reconnecter |
-| Pas de refresh automatique | Interruption de la sync après 24h |
-
-### Solutions possibles
-
-**Option A : Augmenter la durée du token** (simple)
-```env
-ACCESS_TOKEN_EXPIRE_MINUTES=43200  # 30 jours
-```
-
-**Option B : Implémenter un refresh token** (plus sécurisé)
-- Ajouter un endpoint `/auth/refresh`
-- Le plugin appelle ce endpoint avant expiration
-- Nécessite modification du plugin + backend
-
-### Recommandation
-
-Pour un usage personnel, **Option A** (token 30 jours) est suffisante.
-Si tu veux plus de sécurité, demande-moi d'implémenter les refresh tokens.
-
----
-
-## ✅ Checklist finale
-
-- [x] Code sur GitHub
-- [x] Code cloné sur Raspberry Pi
-- [x] Fichier `.env` créé sur le serveur
-- [ ] Port 20443 ouvert sur Freebox
-- [ ] Modifications DNS-01 appliquées sur le Raspberry
-- [ ] Services Docker relancés avec certificat HTTPS OK
-- [ ] Compte utilisateur créé
-- [x] Plugin installé sur Mac
-- [ ] Plugin installé sur Android
-- [ ] Plugin installé sur iOS
-- [ ] Sync testé entre tous les devices
-- [ ] Décision sur refresh token
-
----
-
-## 🆘 Dépannage
-
-### Le certificat HTTPS ne marche pas
-```bash
-docker compose -f docker-compose.prod.yml logs caddy
-```
-Vérifier que :
-- Le port 20443 est bien ouvert sur la Freebox
-- Le token DuckDNS est correct dans `.env`
-- L'image Caddy a été reconstruite avec le plugin DNS
-
-### L'API ne répond pas
-```bash
-docker compose -f docker-compose.prod.yml logs syncobsidian
-```
+- **tx** : Ticket technique (qualité de code)
+- **sx** : Ticket sécurité
+- **fx** : Ticket fonctionnel

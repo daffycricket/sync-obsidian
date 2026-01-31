@@ -426,12 +426,14 @@ syncobsidian/
 │   │   ├── sync.py              # Logique de synchronisation notes + attachments
 │   │   ├── storage.py           # Gestion fichiers (lecture/écriture)
 │   │   └── logging_config.py    # Configuration des logs
-│   ├── tests/                   # Tests pytest (138 tests)
+│   ├── tests/                   # Tests pytest
 │   │   ├── conftest.py          # Fixtures pytest
 │   │   ├── test_auth.py         # Tests authentification
 │   │   ├── test_sync_*.py       # Tests synchronisation
 │   │   ├── test_attachments*.py # Tests pièces jointes
 │   │   └── ...
+│   ├── run_tests.sh             # Lancement des tests
+│   ├── tests_remote.sh          # Lancement de tests E2E post déploiement
 │   ├── data/                    # Données persistantes (volume Docker)
 │   │   ├── syncobsidian.db      # Base SQLite
 │   │   └── storage/             # Fichiers par utilisateur
@@ -471,11 +473,10 @@ pip install -r requirements.txt
 uvicorn app.main:app --reload
 ```
 
-### Tests
+### Tests backend
 ```bash
 cd backend
-pip install -r requirements-test.txt
-pytest tests/ -v
+./run_tests.sh
 ```
 
 ### Plugin

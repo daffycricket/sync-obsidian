@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     # Server
     host: str = "0.0.0.0"
     port: int = 8000
+    request_timeout_seconds: int = 30
     
     class Config:
         env_file = ".env"
