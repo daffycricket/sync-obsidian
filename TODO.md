@@ -5,19 +5,13 @@
 | # | Priorité | Action | Description | Ce que ça corrige | Rétrocompatible | Dépendances additionnelles | Impact performance | Autres impacts / Risques | Commentaires / Stratégie de mitigation |
 |---|----------|--------|-------------|-------------------|-----------------|---------------------------|-------------------|--------------------------|----------------------------------------|
 | t4 | **P2 - MOYENNE** | **Supprimer code mort** | Retirer ou implémenter les commandes `force-push` et `force-pull` dans `main.ts:36-50` qui affichent "Fonction non implémentée" | **UX** : évite la confusion utilisateur, réduit le code inutile | ✅ Oui | Aucune | Aucun | **Risque faible** : Aucun si on supprime. Si on implémente : risque de perte de données si mal utilisé. | **Stratégie** : Option A (recommandé) : Supprimer les commandes. Option B : Implémenter avec confirmation utilisateur + TI pour valider le comportement. |
-| t7 | **P3 - BASSE** | **Factoriser duplication push** | Créer une fonction générique pour `push_notes` et `push_attachments` dans `sync.py` (pattern quasi-identique L.270-346 vs L.632-725) | **Maintenabilité** : DRY, réduit le risque de divergence entre les deux implémentations | ✅ Oui | Aucune | Aucun | **Risque modéré** : Généralisation peut introduire des bugs subtils (notes = texte, attachments = binaire). | **Stratégie** : (1) Attendre le refactoring t3. (2) Créer `_push_items()` générique avec type hints. (3) TI existants doivent tous passer. (4) Ajouter TU spécifique pour la fonction générique. |
-| t8 | **P3 - BASSE** | **Index sur modified_at** | Ajouter un index sur `notes.modified_at` et `attachments.modified_at` pour optimiser les requêtes filtrées | **Performance** : les requêtes `WHERE modified_at > X` seront plus rapides | ✅ Oui | Aucune | Amélioration (requêtes filtrées) | **Risque très faible** : Migration simple, pas de changement de code. | **Stratégie** : Migration Alembic simple. À faire si le volume de notes dépasse ~10 000 par utilisateur. Pas urgent actuellement. |
 | t10 | **P4 - OPTIONNEL** | **Enrichir docstrings** | Ajouter des docstrings détaillées sur les fonctions publiques de `sync.py` et JSDoc sur `sync-service.ts` | **Documentation** : facilite l'onboarding de nouveaux développeurs | ✅ Oui | Aucune | Aucun | Aucun risque. Temps d'écriture uniquement. | **Stratégie** : À faire lors du refactoring t3 et t6. Documenter au fil de l'eau plutôt qu'en batch. |
 
 ### Ordre recommandé d'exécution
 
 ```
-t7 (factoriser push) ──► t8 (index modified_at) ──► t10 (docstrings)
+t10 (docstrings) - optionnel, au fil de l'eau
 ```
-
-**Rationale** :
-- t7/t8 sont des optimisations de priorité basse
-- t10 peut être fait au fil de l'eau
 
 ---
 

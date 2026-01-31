@@ -25,7 +25,7 @@ class Note(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     path = Column(String(500), nullable=False)  # Chemin relatif dans le vault
     content_hash = Column(String(64), nullable=False)  # SHA256 du contenu
-    modified_at = Column(DateTime, nullable=False)
+    modified_at = Column(DateTime, nullable=False, index=True)
     synced_at = Column(DateTime, default=datetime.utcnow)
     is_deleted = Column(Boolean, default=False)
     
@@ -46,7 +46,7 @@ class Attachment(Base):
     content_hash = Column(String(64), nullable=False)
     size = Column(Integer, nullable=False)
     mime_type = Column(String(100))
-    modified_at = Column(DateTime, nullable=False)
+    modified_at = Column(DateTime, nullable=False, index=True)
     synced_at = Column(DateTime, default=datetime.utcnow)
     is_deleted = Column(Boolean, default=False)
 
