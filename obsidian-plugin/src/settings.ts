@@ -2,6 +2,7 @@ import { App, PluginSettingTab, Setting, Notice } from "obsidian";
 import SyncObsidianPlugin from "./main";
 import { ApiClient } from "./api-client";
 import { SyncReportEntry, SyncedNotesResponse, CompareResponse } from "./types";
+import { generateReportContent } from "./report-formatter";
 
 export class SyncObsidianSettingTab extends PluginSettingTab {
     plugin: SyncObsidianPlugin;
@@ -260,7 +261,10 @@ export class SyncObsidianSettingTab extends PluginSettingTab {
         `;
 
         // Générer le contenu du rapport
-        const reportContent = this.generateReportContent();
+        const reportContent = generateReportContent(
+            this.plugin.settings.syncHistory,
+            this.plugin.settings.reportShowStackTrace
+        );
         const reportPre = reportContainer.createEl("pre", {
             text: reportContent,
             cls: "sync-report-content",
@@ -274,203 +278,6 @@ export class SyncObsidianSettingTab extends PluginSettingTab {
             margin: 0;
             padding: 0;
         `;
-    }
-
-    /**
-     * Génère le contenu formaté du rapport
-     */
-    private generateReportContent(): string {
-        const history = this.plugin.settings.syncHistory;
-        
-        if (!history || history.length === 0) {
-            return "Aucune synchronisation enregistrée.";
-        }
-
-        const lines: string[] = [];
-
-        for (const entry of history) {
-            lines.push(this.formatReportEntry(entry));
-            lines.push(""); // Ligne vide entre les entrées
-        }
-
-        return lines.join("\n");
-    }
-
-    /**
-     * Formate une entrée de rapport
-     */
-    private formatReportEntry(entry: SyncReportEntry): string {
-        const lines: string[] = [];
-        
-        // En-tête avec date et statut
-        const date = new Date(entry.timestamp);
-        const dateStr = date.toLocaleDateString("fr-FR", {
-            day: "2-digit",
-            month: "2-digit",
-            year: "numeric",
-        });
-        const timeStr = date.toLocaleTimeString("fr-FR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-        });
-        
-        const statusIcon = this.getStatusIcon(entry.status);
-        const statusLabel = this.getStatusLabel(entry.status);
-        
-        lines.push("───────────────────────────────────────────────────────");
-        lines.push(`📅 ${dateStr} ${timeStr}                     ${statusIcon} ${statusLabel}`);
-        lines.push("───────────────────────────────────────────────────────");
-        lines.push("");
-
-        // En cas d'erreur complète
-        if (entry.status === "error" && entry.error_type) {
-            lines.push(`Type : Erreur ${this.getErrorTypeLabel(entry.error_type)}`);
-            lines.push("");
-            if (entry.error_message) {
-                lines.push(`Message : ${entry.error_message}`);
-                lines.push("");
-            }
-            if (entry.error_file) {
-                lines.push(`Fichier concerné : ${entry.error_file}`);
-                lines.push("");
-            }
-            if (entry.error_details) {
-                lines.push(`Détails : ${entry.error_details}`);
-                lines.push("");
-            }
-            if (this.plugin.settings.reportShowStackTrace && entry.stack_trace) {
-                lines.push("Stack trace :");
-                lines.push(entry.stack_trace);
-                lines.push("");
-            }
-        } else {
-            // Sync partielle ?
-            if (entry.failed.length > 0) {
-                const total = entry.sent.length + entry.received.length + entry.failed.length;
-                const success = entry.sent.length + entry.received.length;
-                lines.push(`Sync partielle : ${success}/${total} fichiers synchronisés`);
-                lines.push("");
-            }
-
-            // Fichiers envoyés
-            lines.push(`↑ Envoyées (${entry.sent.length}) :`);
-            if (entry.sent.length === 0) {
-                lines.push("  (aucune)");
-            } else {
-                for (const file of entry.sent) {
-                    lines.push(`  • ${file.path}`);
-                }
-            }
-            lines.push("");
-
-            // Fichiers reçus
-            lines.push(`↓ Reçues (${entry.received.length}) :`);
-            if (entry.received.length === 0) {
-                lines.push("  (aucune)");
-            } else {
-                for (const file of entry.received) {
-                    const sizeInfo = file.size_delta !== undefined 
-                        ? ` (${this.formatSize(file.size_delta)})`
-                        : "";
-                    lines.push(`  • ${file.path}${sizeInfo}`);
-                }
-            }
-            lines.push("");
-
-            // Fichiers supprimés
-            lines.push(`🗑 Supprimées (${entry.deleted.length})`);
-            if (entry.deleted.length > 0) {
-                for (const path of entry.deleted) {
-                    lines.push(`  • ${path}`);
-                }
-            }
-            lines.push("");
-
-            // Conflits
-            lines.push(`⚠️ Conflits (${entry.conflicts.length})`);
-            if (entry.conflicts.length > 0) {
-                for (const conflict of entry.conflicts) {
-                    lines.push(`  • ${conflict.path}`);
-                    lines.push(`    → Fichier créé : ${conflict.conflict_file}`);
-                }
-            }
-            lines.push("");
-
-            // Échecs
-            if (entry.failed.length > 0) {
-                lines.push(`❌ Échecs (${entry.failed.length}) :`);
-                for (const fail of entry.failed) {
-                    lines.push(`  • ${fail.path}`);
-                    lines.push(`    Erreur : ${fail.error}`);
-                    if (fail.details) {
-                        lines.push(`    ${fail.details}`);
-                    }
-                }
-                lines.push("");
-            }
-
-            // Résumé
-            if (entry.sent.length === 0 && entry.received.length === 0 && 
-                entry.deleted.length === 0 && entry.conflicts.length === 0) {
-                lines.push(`⏱️ Durée : ${this.formatDuration(entry.duration_ms)} | Aucun changement`);
-            } else {
-                lines.push(
-                    `⏱️ Durée : ${this.formatDuration(entry.duration_ms)} | ` +
-                    `📦 ↑${this.formatSize(entry.bytes_up)} ↓${this.formatSize(entry.bytes_down)}`
-                );
-            }
-        }
-
-        return lines.join("\n");
-    }
-
-    private getStatusIcon(status: "success" | "warning" | "error"): string {
-        switch (status) {
-            case "success": return "✅";
-            case "warning": return "⚠️";
-            case "error": return "❌";
-        }
-    }
-
-    private getStatusLabel(status: "success" | "warning" | "error"): string {
-        switch (status) {
-            case "success": return "OK";
-            case "warning": return "WARNING";
-            case "error": return "ERREUR";
-        }
-    }
-
-    private getErrorTypeLabel(type: "server" | "local" | "network" | "auth"): string {
-        switch (type) {
-            case "server": return "serveur";
-            case "local": return "locale";
-            case "network": return "réseau";
-            case "auth": return "authentification";
-        }
-    }
-
-    private formatSize(bytes: number): string {
-        if (bytes === 0) return "0 o";
-        
-        const sign = bytes < 0 ? "-" : "+";
-        const absBytes = Math.abs(bytes);
-        
-        if (absBytes < 1024) {
-            return `${sign}${absBytes} o`;
-        } else if (absBytes < 1024 * 1024) {
-            return `${sign}${(absBytes / 1024).toFixed(1)} Ko`;
-        } else {
-            return `${sign}${(absBytes / (1024 * 1024)).toFixed(1)} Mo`;
-        }
-    }
-
-    private formatDuration(ms: number): string {
-        if (ms < 1000) {
-            return `${ms}ms`;
-        } else {
-            return `${(ms / 1000).toFixed(1)}s`;
-        }
     }
 
     private async handleLogin(): Promise<void> {
