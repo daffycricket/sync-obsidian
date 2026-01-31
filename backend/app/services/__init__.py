@@ -1,28 +1,7 @@
 """
-Facade pour rétrocompatibilité.
-
-Ce module ré-exporte les fonctions de synchronisation depuis le package services/.
-Les imports existants continuent de fonctionner :
-
-    from .sync import process_sync, push_notes, pull_notes, ...
-
-Nouveau code devrait importer directement depuis services/ :
-
-    from .services import process_sync, push_notes, pull_notes, ...
+Services de synchronisation SyncObsidian.
 """
-from .services import (
-    # Sync principal
-    process_sync,
-    # Notes
-    push_notes,
-    pull_notes,
-    # Attachments
-    push_attachments,
-    pull_attachments,
-    # Comparaison / Debug
-    get_synced_notes,
-    compare_notes,
-    # Utilitaires
+from .sync_utils import (
     normalize_datetime,
     parse_attachment_references,
     get_server_notes,
@@ -30,8 +9,11 @@ from .services import (
     get_server_attachments,
     get_attachment_by_path,
     MAX_ATTACHMENT_SIZE,
-    OBSIDIAN_LINK_PATTERN,
+    OBSIDIAN_LINK_PATTERN
 )
+from .notes_sync import process_sync, push_notes, pull_notes
+from .attachments_sync import push_attachments, pull_attachments
+from .compare_sync import get_synced_notes, compare_notes
 
 __all__ = [
     # Sync principal
