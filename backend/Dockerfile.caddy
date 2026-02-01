@@ -1,8 +1,9 @@
-# Image Caddy avec le plugin OVH pour le challenge DNS-01
+# Image Caddy avec plugins OVH (DNS-01) et rate limiting
 FROM caddy:2-builder AS builder
 
 RUN xcaddy build \
-    --with github.com/caddy-dns/ovh
+    --with github.com/caddy-dns/ovh \
+    --with github.com/mholt/caddy-ratelimit
 
 FROM caddy:2-alpine
 

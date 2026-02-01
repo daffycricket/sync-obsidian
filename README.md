@@ -272,6 +272,19 @@ Remplacer `ovh` par votre provider si différent.
 - ✅ Authentification par token **JWT**
 - ✅ HTTPS avec certificat **Let's Encrypt** (auto-renouvelé)
 - ✅ Headers de sécurité (HSTS, X-Frame-Options, etc.)
+- ✅ Protection DDoS et brute force via **rate limiting** (Caddy)
+
+### Rate Limiting
+
+Caddy protège l'API contre les attaques par saturation et les tentatives de connexion automatisées :
+
+| Endpoint | Limite | Protection |
+|----------|--------|------------|
+| `/auth/login` | 5 req/min | Brute force |
+| `/health` | 20 req/min | Monitoring abusif |
+| Autres | 120 req/min | DDoS layer 7 |
+
+**Comportement :** Au-delà de la limite, l'API renvoie `429 Too Many Requests` avec un header `Retry-After`.
 
 ---
 
@@ -330,6 +343,7 @@ Remplacer `ovh` par votre provider si différent.
 - ✅ Compatible desktop, iOS et Android
 - ✅ Docker-ready pour déploiement facile
 - ✅ HTTPS automatique avec Let's Encrypt
+- ✅ Protection DDoS et brute force (rate limiting Caddy)
 
 ---
 

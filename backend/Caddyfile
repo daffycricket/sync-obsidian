@@ -1,3 +1,8 @@
+{
+    # Activer le rate limiting avant le reverse proxy
+    order rate_limit before reverse_proxy
+}
+
 {$DOMAIN:vault.mon-domaine.fr} {
     # TLS avec challenge DNS-01 via OVH
     tls {
@@ -8,17 +13,61 @@
             consumer_key {$OVH_CONSUMER_KEY}
         }
     }
-    
+
+    # ===========================================
+    # RATE LIMITING PAR ENDPOINT
+    # ===========================================
+
+    # /auth/login - 5 requêtes/minute (protection brute force)
+    @login {
+        path /auth/login
+    }
+    rate_limit @login {
+        zone login {
+            key    {remote_host}
+            events 5
+            window 1m
+        }
+    }
+
+    # /health - 20 requêtes/minute (monitoring)
+    @health {
+        path /health
+    }
+    rate_limit @health {
+        zone health {
+            key    {remote_host}
+            events 20
+            window 1m
+        }
+    }
+
+    # Tous les autres endpoints - 120 requêtes/minute
+    rate_limit {
+        zone api {
+            key    {remote_host}
+            events 120
+            window 1m
+        }
+    }
+
+    # ===========================================
+    # REVERSE PROXY
+    # ===========================================
     reverse_proxy syncobsidian:8000
-    
-    # Headers de sécurité
+
+    # ===========================================
+    # HEADERS DE SECURITE
+    # ===========================================
     header {
         Strict-Transport-Security "max-age=31536000; includeSubDomains"
         X-Content-Type-Options "nosniff"
         X-Frame-Options "DENY"
     }
-    
-    # Logs
+
+    # ===========================================
+    # LOGS
+    # ===========================================
     log {
         output stdout
         format console
