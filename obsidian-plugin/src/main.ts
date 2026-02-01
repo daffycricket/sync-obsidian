@@ -33,22 +33,6 @@ export default class SyncObsidianPlugin extends Plugin {
             },
         });
 
-        this.addCommand({
-            id: "force-push",
-            name: "Forcer l'envoi de toutes les notes",
-            callback: async () => {
-                new Notice("Fonction non implémentée");
-            },
-        });
-
-        this.addCommand({
-            id: "force-pull",
-            name: "Forcer la récupération de toutes les notes",
-            callback: async () => {
-                new Notice("Fonction non implémentée");
-            },
-        });
-
         // Ajouter l'onglet de paramètres
         this.addSettingTab(new SyncObsidianSettingTab(this.app, this));
 
