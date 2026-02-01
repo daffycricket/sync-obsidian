@@ -4,16 +4,6 @@
 
 | # | Priorité | Action | Description | Ce que ça corrige | Rétrocompatible | Dépendances additionnelles | Impact performance | Autres impacts / Risques | Commentaires / Stratégie de mitigation |
 |---|----------|--------|-------------|-------------------|-----------------|---------------------------|-------------------|--------------------------|----------------------------------------|
-| t4 | **P2 - MOYENNE** | **Supprimer code mort** | Retirer ou implémenter les commandes `force-push` et `force-pull` dans `main.ts:36-50` qui affichent "Fonction non implémentée" | **UX** : évite la confusion utilisateur, réduit le code inutile | ✅ Oui | Aucune | Aucun | **Risque faible** : Aucun si on supprime. Si on implémente : risque de perte de données si mal utilisé. | **Stratégie** : Option A (recommandé) : Supprimer les commandes. Option B : Implémenter avec confirmation utilisateur + TI pour valider le comportement. |
-| t10 | **P4 - OPTIONNEL** | **Enrichir docstrings** | Ajouter des docstrings détaillées sur les fonctions publiques de `sync.py` et JSDoc sur `sync-service.ts` | **Documentation** : facilite l'onboarding de nouveaux développeurs | ✅ Oui | Aucune | Aucun | Aucun risque. Temps d'écriture uniquement. | **Stratégie** : À faire lors du refactoring t3 et t6. Documenter au fil de l'eau plutôt qu'en batch. |
-
-### Ordre recommandé d'exécution
-
-```
-t10 (docstrings) - optionnel, au fil de l'eau
-```
-
----
 
 ## Sécurité
 

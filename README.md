@@ -697,7 +697,23 @@ sudo rm -rf /var/lib/docker/volumes/backend_syncobsidian-data/_data/storage/2
 sudo rm -rf /var/lib/docker/volumes/backend_syncobsidian-data/_data/storage/3
 ```
 
----
+**Alternative : executer un script python qui accède ou modifie les données sur la base sqllite**
+
+Exemple : le script `/tmp/add_unique_constraints.py` suivant, présent sur le serveur qui hoste les images docker :
+
+```python
+import sqlite3
+conn = sqlite3.connect("/app/data/syncobsidian.db")
+conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_notes_user_path ON notes(user_id, path)")
+conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS uq_attachments_user_path ON attachments(user_id, path)")
+conn.commit()
+print("Done")
+```
+
+L'exécuter avec la commande suivante
+```bash
+docker cp /tmp/add_unique_constraints.py syncobsidian-api:/tmp/add_unique_constraints.py && docker exec syncobsidian-api python /tmp/add_unique_constraints.py
+```
 
 ## License
 
