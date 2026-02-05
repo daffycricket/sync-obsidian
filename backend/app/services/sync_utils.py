@@ -78,10 +78,8 @@ async def get_note_by_path(db: AsyncSession, user_id: int, path: str) -> Note:
 
 
 async def get_server_attachments(db: AsyncSession, user_id: int) -> List[Attachment]:
-    """Récupère tous les attachments non supprimés d'un utilisateur."""
-    query = select(Attachment).where(
-        and_(Attachment.user_id == user_id, Attachment.is_deleted == False)
-    )
+    """Récupère tous les attachments d'un utilisateur (y compris supprimés)."""
+    query = select(Attachment).where(Attachment.user_id == user_id)
     result = await db.execute(query)
     return result.scalars().all()
 

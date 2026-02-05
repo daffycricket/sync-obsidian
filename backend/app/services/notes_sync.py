@@ -153,31 +153,71 @@ async def process_sync(
         if server_att is None:
             # Attachment n'existe pas sur le serveur -> le serveur veut le recevoir
             attachments_to_push.append(client_att.path)
-        elif server_att.content_hash != client_att.content_hash:
-            # Hash différent - comme les attachments sont immutables,
-            # c'est un conflit. On garde la version serveur (client doit pull)
-            attachments_to_pull.append(AttachmentMetadata(
-                path=server_att.path,
-                content_hash=server_att.content_hash,
-                size=server_att.size,
-                mime_type=server_att.mime_type,
-                modified_at=server_att.modified_at,
-                is_deleted=server_att.is_deleted
-            ))
-        # Si même hash, rien à faire
+        else:
+            # Normaliser les timestamps pour comparaison
+            client_time = normalize_datetime(client_att.modified_at)
+            server_time_att = normalize_datetime(server_att.modified_at)
+
+            if client_att.is_deleted:
+                # Client signale une suppression
+                if not server_att.is_deleted:
+                    if client_time >= server_time_att:
+                        # Suppression client est plus récente -> accepter
+                        attachments_to_push.append(client_att.path)
+                    # Sinon: serveur a été modifié après -> on garde la version serveur
+                    # (pas de conflit pour attachments, on re-propose le serveur)
+                    else:
+                        attachments_to_pull.append(AttachmentMetadata(
+                            path=server_att.path,
+                            content_hash=server_att.content_hash,
+                            size=server_att.size,
+                            mime_type=server_att.mime_type,
+                            modified_at=server_att.modified_at,
+                            is_deleted=server_att.is_deleted
+                        ))
+                # Si déjà supprimé sur le serveur, rien à faire
+            elif server_att.is_deleted:
+                # Serveur a supprimé mais client a encore l'attachment
+                if client_time > server_time_att:
+                    # Client a modifié après la suppression -> recréer l'attachment
+                    attachments_to_push.append(client_att.path)
+                else:
+                    # Suppression serveur est plus récente -> propager au client
+                    attachments_to_pull.append(AttachmentMetadata(
+                        path=server_att.path,
+                        content_hash=server_att.content_hash,
+                        size=server_att.size,
+                        mime_type=server_att.mime_type,
+                        modified_at=server_att.modified_at,
+                        is_deleted=True
+                    ))
+            elif server_att.content_hash != client_att.content_hash:
+                # Hash différent - comme les attachments sont immutables,
+                # on garde la version serveur (client doit pull)
+                attachments_to_pull.append(AttachmentMetadata(
+                    path=server_att.path,
+                    content_hash=server_att.content_hash,
+                    size=server_att.size,
+                    mime_type=server_att.mime_type,
+                    modified_at=server_att.modified_at,
+                    is_deleted=server_att.is_deleted
+                ))
+            # Si même hash, rien à faire
 
     # Attachments sur le serveur que le client n'a pas
     for path, server_att in server_attachments_map.items():
         if path not in client_attachments_map:
-            # Le client n'a pas cet attachment -> toujours le proposer
-            attachments_to_pull.append(AttachmentMetadata(
-                path=server_att.path,
-                content_hash=server_att.content_hash,
-                size=server_att.size,
-                mime_type=server_att.mime_type,
-                modified_at=server_att.modified_at,
-                is_deleted=server_att.is_deleted
-            ))
+            # Ne pas envoyer les attachments supprimés si le client ne les connaît pas
+            if not server_att.is_deleted:
+                # Le client n'a pas cet attachment -> toujours le proposer
+                attachments_to_pull.append(AttachmentMetadata(
+                    path=server_att.path,
+                    content_hash=server_att.content_hash,
+                    size=server_att.size,
+                    mime_type=server_att.mime_type,
+                    modified_at=server_att.modified_at,
+                    is_deleted=server_att.is_deleted
+                ))
 
     return SyncResponse(
         server_time=server_time,
