@@ -471,7 +471,9 @@ describe('SyncService', () => {
             mockRequestUrl.mockResolvedValueOnce({
                 status: 200,
                 text: '{}',
-                json: {}
+                json: {},
+                headers: {},
+                arrayBuffer: new ArrayBuffer(0)
             });
 
             // Use the API client indirectly
@@ -496,7 +498,9 @@ describe('SyncService', () => {
             mockRequestUrl.mockResolvedValueOnce({
                 status: 200,
                 text: '{}',
-                json: { access_token: 'new-token', token_type: 'bearer' }
+                json: { access_token: 'new-token', token_type: 'bearer' },
+                headers: {},
+                arrayBuffer: new ArrayBuffer(0)
             });
 
             const result = await service.login('user', 'pass');
@@ -511,6 +515,206 @@ describe('SyncService', () => {
             const result = await service.login('user', 'wrong');
 
             expect(result).toBe(false);
+        });
+    });
+
+    describe('pushAttachments - deletion tracking', () => {
+        it('should return deleted attachments in result', async () => {
+            const pushAttachments = (service as any).pushAttachments.bind(service);
+
+            // Mock API response for push
+            mockRequestUrl.mockResolvedValueOnce({
+                status: 200,
+                text: '{}',
+                json: { success: ['images/deleted.png'], failed: [] },
+                headers: {},
+                arrayBuffer: new ArrayBuffer(0)
+            });
+
+            // Local attachments with one marked as deleted
+            const localAttachments = [
+                {
+                    path: 'images/deleted.png',
+                    content_hash: '',
+                    size: 0,
+                    mime_type: null,
+                    modified_at: new Date().toISOString(),
+                    is_deleted: true
+                }
+            ];
+
+            const result = await pushAttachments(['images/deleted.png'], localAttachments);
+
+            expect(result.deleted).toContain('images/deleted.png');
+            expect(result.deleted).toHaveLength(1);
+        });
+
+        it('should not include non-deleted attachments in deleted list', async () => {
+            const pushAttachments = (service as any).pushAttachments.bind(service);
+
+            // Mock file in vault - create object that passes instanceof TFile
+            const mockFile = Object.create(TFile.prototype);
+            mockFile.path = 'images/existing.png';
+            mockFile.stat = { mtime: Date.now(), ctime: Date.now(), size: 1000 };
+            mockApp.vault.getAbstractFileByPath = jest.fn().mockReturnValue(mockFile);
+            mockApp.vault.readBinary = jest.fn().mockResolvedValue(new ArrayBuffer(10));
+
+            // Mock API response
+            mockRequestUrl.mockResolvedValueOnce({
+                status: 200,
+                text: '{}',
+                json: { success: ['images/existing.png'], failed: [] },
+                headers: {},
+                arrayBuffer: new ArrayBuffer(0)
+            });
+
+            const localAttachments = [
+                {
+                    path: 'images/existing.png',
+                    content_hash: 'abc123',
+                    size: 1000,
+                    mime_type: 'image/png',
+                    modified_at: new Date().toISOString(),
+                    is_deleted: false
+                }
+            ];
+
+            const result = await pushAttachments(['images/existing.png'], localAttachments);
+
+            expect(result.deleted).toHaveLength(0);
+            expect(result.sent).toHaveLength(1);
+        });
+
+        it('should track multiple deleted attachments', async () => {
+            const pushAttachments = (service as any).pushAttachments.bind(service);
+
+            mockRequestUrl.mockResolvedValueOnce({
+                status: 200,
+                text: '{}',
+                json: { success: ['a.png', 'b.png', 'c.png'], failed: [] },
+                headers: {},
+                arrayBuffer: new ArrayBuffer(0)
+            });
+
+            const localAttachments = [
+                { path: 'a.png', content_hash: '', size: 0, mime_type: null, modified_at: new Date().toISOString(), is_deleted: true },
+                { path: 'b.png', content_hash: '', size: 0, mime_type: null, modified_at: new Date().toISOString(), is_deleted: true },
+                { path: 'c.png', content_hash: '', size: 0, mime_type: null, modified_at: new Date().toISOString(), is_deleted: true }
+            ];
+
+            const result = await pushAttachments(['a.png', 'b.png', 'c.png'], localAttachments);
+
+            expect(result.deleted).toHaveLength(3);
+            expect(result.deleted).toContain('a.png');
+            expect(result.deleted).toContain('b.png');
+            expect(result.deleted).toContain('c.png');
+        });
+    });
+
+    describe('pullAttachments - deletion tracking', () => {
+        it('should return deleted attachments from server', async () => {
+            const pullAttachments = (service as any).pullAttachments.bind(service);
+
+            // Mock file exists locally (will be deleted)
+            const mockFile = { path: 'images/to-delete.png' };
+            mockApp.vault.getAbstractFileByPath = jest.fn().mockReturnValue(mockFile);
+            mockApp.vault.delete = jest.fn().mockResolvedValue(undefined);
+
+            // Mock API response with deleted attachment
+            mockRequestUrl.mockResolvedValueOnce({
+                status: 200,
+                text: '{}',
+                json: {
+                    attachments: [
+                        {
+                            path: 'images/to-delete.png',
+                            content_base64: '',
+                            content_hash: '',
+                            size: 0,
+                            mime_type: null,
+                            modified_at: new Date().toISOString(),
+                            is_deleted: true
+                        }
+                    ]
+                },
+                headers: {},
+                arrayBuffer: new ArrayBuffer(0)
+            });
+
+            const result = await pullAttachments(['images/to-delete.png']);
+
+            expect(result.deleted).toContain('images/to-delete.png');
+            expect(result.deleted).toHaveLength(1);
+            expect(result.received).toHaveLength(0);
+        });
+
+        it('should not include received attachments in deleted list', async () => {
+            const pullAttachments = (service as any).pullAttachments.bind(service);
+
+            mockApp.vault.getAbstractFileByPath = jest.fn().mockReturnValue(null);
+            mockApp.vault.createBinary = jest.fn().mockResolvedValue({ path: 'images/new.png' });
+
+            // Mock API response with non-deleted attachment
+            mockRequestUrl.mockResolvedValueOnce({
+                status: 200,
+                text: '{}',
+                json: {
+                    attachments: [
+                        {
+                            path: 'images/new.png',
+                            content_base64: btoa('test content'),
+                            content_hash: 'abc123',
+                            size: 12,
+                            mime_type: 'image/png',
+                            modified_at: new Date().toISOString(),
+                            is_deleted: false
+                        }
+                    ]
+                },
+                headers: {},
+                arrayBuffer: new ArrayBuffer(0)
+            });
+
+            const result = await pullAttachments(['images/new.png']);
+
+            expect(result.deleted).toHaveLength(0);
+            expect(result.received).toHaveLength(1);
+        });
+
+        it('should return empty deleted array when paths is empty', async () => {
+            const pullAttachments = (service as any).pullAttachments.bind(service);
+
+            const result = await pullAttachments([]);
+
+            expect(result.deleted).toHaveLength(0);
+            expect(result.received).toHaveLength(0);
+        });
+
+        it('should track multiple deleted attachments from server', async () => {
+            const pullAttachments = (service as any).pullAttachments.bind(service);
+
+            const mockFile = { path: 'dummy' };
+            mockApp.vault.getAbstractFileByPath = jest.fn().mockReturnValue(mockFile);
+            mockApp.vault.delete = jest.fn().mockResolvedValue(undefined);
+
+            mockRequestUrl.mockResolvedValueOnce({
+                status: 200,
+                text: '{}',
+                json: {
+                    attachments: [
+                        { path: 'a.png', content_base64: '', content_hash: '', size: 0, mime_type: null, modified_at: new Date().toISOString(), is_deleted: true },
+                        { path: 'b.png', content_base64: '', content_hash: '', size: 0, mime_type: null, modified_at: new Date().toISOString(), is_deleted: true }
+                    ]
+                },
+                headers: {},
+                arrayBuffer: new ArrayBuffer(0)
+            });
+
+            const result = await pullAttachments(['a.png', 'b.png']);
+
+            expect(result.deleted).toHaveLength(2);
+            expect(result.deleted).toContain('a.png');
+            expect(result.deleted).toContain('b.png');
         });
     });
 });

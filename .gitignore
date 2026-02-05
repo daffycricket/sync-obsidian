@@ -90,3 +90,4 @@ tmp/
 temp/
 test_data/
 .tmp/
+backend/deploy.sh

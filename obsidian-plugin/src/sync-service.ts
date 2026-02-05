@@ -273,10 +273,11 @@ export class SyncService {
 
             // 6. Pousser les attachments demandés par le serveur
             if (syncResponse.attachments_to_push.length > 0) {
-                const { sent, failed: pushAttFailed, bytesUp } =
+                const { sent, deleted: deletedAtt, failed: pushAttFailed, bytesUp } =
                     await this.pushAttachments(syncResponse.attachments_to_push, localAttachments);
 
                 report.sent.push(...sent);
+                report.deleted.push(...deletedAtt);
                 report.failed.push(...pushAttFailed);
                 report.bytes_up += bytesUp;
             }
@@ -284,10 +285,16 @@ export class SyncService {
             // 7. Récupérer les attachments du serveur
             if (syncResponse.attachments_to_pull.length > 0) {
                 const paths = syncResponse.attachments_to_pull.map((a) => a.path);
-                const { received, failed: pullAttFailed, bytesDown } =
+                const { received, deleted: deletedAttPull, failed: pullAttFailed, bytesDown } =
                     await this.pullAttachments(paths);
 
                 report.received.push(...received);
+                // Ajouter les suppressions reçues (côté serveur)
+                deletedAttPull.forEach(d => {
+                    if (!report.deleted.includes(d)) {
+                        report.deleted.push(d);
+                    }
+                });
                 report.failed.push(...pullAttFailed);
                 report.bytes_down += bytesDown;
             }
@@ -468,9 +475,10 @@ export class SyncService {
     private async pushAttachments(
         paths: string[],
         localAttachments: AttachmentMetadata[]
-    ): Promise<{ sent: SyncFileInfo[]; failed: SyncFailedFile[]; bytesUp: number }> {
+    ): Promise<{ sent: SyncFileInfo[]; deleted: string[]; failed: SyncFailedFile[]; bytesUp: number }> {
         const attachmentsToSend: AttachmentContent[] = [];
         const sent: SyncFileInfo[] = [];
+        const deleted: string[] = [];
         const failed: SyncFailedFile[] = [];
         let bytesUp = 0;
 
@@ -491,6 +499,7 @@ export class SyncService {
                         modified_at: localAtt.modified_at,
                         is_deleted: true,
                     });
+                    deleted.push(path);
                 } else {
                     const file = this.app.vault.getAbstractFileByPath(path);
                     if (file instanceof TFile) {
@@ -525,18 +534,19 @@ export class SyncService {
             await this.apiClient.pushAttachments({ attachments: attachmentsToSend });
         }
 
-        return { sent, failed, bytesUp };
+        return { sent, deleted, failed, bytesUp };
     }
 
     private async pullAttachments(
         paths: string[]
-    ): Promise<{ received: SyncFileInfo[]; failed: SyncFailedFile[]; bytesDown: number }> {
+    ): Promise<{ received: SyncFileInfo[]; deleted: string[]; failed: SyncFailedFile[]; bytesDown: number }> {
         const received: SyncFileInfo[] = [];
+        const deleted: string[] = [];
         const failed: SyncFailedFile[] = [];
         let bytesDown = 0;
 
         if (paths.length === 0) {
-            return { received, failed, bytesDown };
+            return { received, deleted, failed, bytesDown };
         }
 
         const response = await this.apiClient.pullAttachments({ paths });
@@ -549,6 +559,7 @@ export class SyncService {
                     if (file instanceof TFile) {
                         await this.app.vault.delete(file);
                     }
+                    deleted.push(att.path);
                 } else {
                     bytesDown += att.size;
 
@@ -585,7 +596,7 @@ export class SyncService {
             }
         }
 
-        return { received, failed, bytesDown };
+        return { received, deleted, failed, bytesDown };
     }
 
     private async pushNotes(
