@@ -1,5 +1,9 @@
 # Spécification : Rate Limiting avec Caddy
 
+**Statut :** Implémenté (01/02/2026) - Commit `d0142f7`
+
+---
+
 ## 1. Contexte et objectifs
 
 ### Problème
