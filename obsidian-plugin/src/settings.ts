@@ -48,16 +48,34 @@ export class SyncObsidianSettingTab extends PluginSettingTab {
                     })
             );
 
+        let passwordInput!: HTMLInputElement;
         new Setting(containerEl)
             .setName("Mot de passe")
             .setDesc("Votre mot de passe")
             .addText((text) => {
-                text.inputEl.type = "password";
+                passwordInput = text.inputEl;
+                passwordInput.type = "password";
                 text.setPlaceholder("••••••••")
                     .setValue(this.plugin.settings.password)
                     .onChange(async (value) => {
                         this.plugin.settings.password = value;
                         await this.plugin.saveSettings();
+                    });
+            })
+            .addExtraButton((button) => {
+                button
+                    .setIcon("eye")
+                    .setTooltip("Afficher le mot de passe")
+                    .onClick(() => {
+                        if (passwordInput.type === "password") {
+                            passwordInput.type = "text";
+                            button.setIcon("eye-off");
+                            button.setTooltip("Masquer le mot de passe");
+                        } else {
+                            passwordInput.type = "password";
+                            button.setIcon("eye");
+                            button.setTooltip("Afficher le mot de passe");
+                        }
                     });
             });
 

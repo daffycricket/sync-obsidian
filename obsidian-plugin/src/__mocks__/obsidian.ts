@@ -71,18 +71,43 @@ export class PluginSettingTab {
 
 // Mock de Setting
 export class Setting {
+    static instances: Setting[] = [];
     settingEl: HTMLElement;
+    _name: string = '';
+    _textComponents: TextComponent[] = [];
+    _extraButtonComponents: ExtraButtonComponent[] = [];
 
     constructor(containerEl: HTMLElement) {
         this.settingEl = document.createElement('div');
+        Setting.instances.push(this);
     }
 
-    setName(name: string): this { return this; }
+    setName(name: string): this { this._name = name; return this; }
     setDesc(desc: string): this { return this; }
-    addText(cb: (text: TextComponent) => void): this { return this; }
-    addToggle(cb: (toggle: ToggleComponent) => void): this { return this; }
-    addButton(cb: (button: ButtonComponent) => void): this { return this; }
-    addDropdown(cb: (dropdown: DropdownComponent) => void): this { return this; }
+    addText(cb: (text: TextComponent) => void): this {
+        const text = new TextComponent();
+        this._textComponents.push(text);
+        cb(text);
+        return this;
+    }
+    addToggle(cb: (toggle: ToggleComponent) => void): this {
+        cb(new ToggleComponent());
+        return this;
+    }
+    addButton(cb: (button: ButtonComponent) => void): this {
+        cb(new ButtonComponent());
+        return this;
+    }
+    addDropdown(cb: (dropdown: DropdownComponent) => void): this {
+        cb(new DropdownComponent());
+        return this;
+    }
+    addExtraButton(cb: (button: ExtraButtonComponent) => void): this {
+        const button = new ExtraButtonComponent();
+        this._extraButtonComponents.push(button);
+        cb(button);
+        return this;
+    }
     setClass(cls: string): this { return this; }
 }
 
@@ -112,6 +137,17 @@ export class DropdownComponent {
     addOption(value: string, display: string): this { return this; }
     setValue(value: string): this { return this; }
     onChange(cb: (value: string) => void): this { return this; }
+}
+
+export class ExtraButtonComponent {
+    extraSettingsEl: HTMLElement = document.createElement('div');
+    _icon: string = '';
+    _tooltip: string = '';
+    _clickHandler: (() => void) | null = null;
+
+    setIcon(icon: string): this { this._icon = icon; return this; }
+    setTooltip(tooltip: string): this { this._tooltip = tooltip; return this; }
+    onClick(cb: () => void): this { this._clickHandler = cb; return this; }
 }
 
 // Mock de TFile et TFolder
@@ -230,4 +266,29 @@ export function arrayBufferToBase64(buffer: ArrayBuffer): string {
         binary += String.fromCharCode(bytes[i]);
     }
     return btoa(binary);
+}
+
+// Extensions Obsidian pour HTMLElement (createEl, empty)
+if (typeof HTMLElement !== 'undefined') {
+    if (!(HTMLElement.prototype as any).createEl) {
+        (HTMLElement.prototype as any).createEl = function(tag: string, options?: any): HTMLElement {
+            const el = document.createElement(tag);
+            if (options?.text) el.textContent = options.text;
+            if (options?.cls) el.className = options.cls;
+            if (options?.attr) {
+                for (const [key, value] of Object.entries(options.attr)) {
+                    el.setAttribute(key, String(value));
+                }
+            }
+            this.appendChild(el);
+            return el;
+        };
+    }
+    if (!(HTMLElement.prototype as any).empty) {
+        (HTMLElement.prototype as any).empty = function(): void {
+            while (this.firstChild) {
+                this.removeChild(this.firstChild);
+            }
+        };
+    }
 }
